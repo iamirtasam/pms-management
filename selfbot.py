@@ -84,7 +84,7 @@ else:
     }
 
 # Discord user IDs that can trigger attendance approval and DM commands
-ADMIN_USER_IDS = {1233480562455609385, 1007633493427228672}
+ADMIN_USER_IDS = {1233480562455609385, 1007633493427228672, 822044765502832701, 579933818862043136}
 
 # Track processed messages to avoid duplicates
 processed_messages = set()
