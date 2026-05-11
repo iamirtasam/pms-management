@@ -83,8 +83,8 @@ else:
         "web_port":   int(os.environ.get("WEB_PORT", 5000)),
     }
 
-# Your Discord user ID - only your reactions will trigger attendance
-ADMIN_USER_ID = 1233480562455609385
+# Discord user IDs that can trigger attendance approval and DM commands
+ADMIN_USER_IDS = {1233480562455609385, 1007633493427228672}
 
 # Track processed messages to avoid duplicates
 processed_messages = set()
@@ -207,7 +207,7 @@ async def on_ready():
         
         log(f"Loaded {len(entries)} users from history", 'SUCCESS')
         log(f"Marked {len(processed_messages)} existing messages as processed", 'INFO')
-        log(f"Watching for ✅ reactions from admin (ID: {ADMIN_USER_ID})", 'INFO')
+        log(f"Watching for ✅ reactions from admins (IDs: {ADMIN_USER_IDS})", 'INFO')
     
     # Start the polling loop
     client.loop.create_task(check_reactions_loop())
@@ -237,7 +237,7 @@ async def check_reactions_loop():
                     if str(reaction.emoji) == '✅':
                         # Check if admin reacted
                         users = [user async for user in reaction.users()]
-                        if any(user.id == ADMIN_USER_ID for user in users):
+                        if any(user.id in ADMIN_USER_IDS for user in users):
                             has_admin_checkmark = True
                             break
                 
@@ -290,7 +290,7 @@ async def check_reactions_loop():
 @client.event
 async def on_message(message):
     # ── DM command handler ────────────────────────────────────────
-    if message.guild is None and message.author.id == ADMIN_USER_ID:
+    if message.guild is None and message.author.id in ADMIN_USER_IDS:
         content = message.content.strip()
         if content.startswith('pms!'):
             await handle_command(message, content)
