@@ -183,6 +183,7 @@ def run(use_current=False):
     all_values     = new_sheet.get_all_values()
     updates        = []
     matched_badges = set()
+    written_badges = set()  # tracks which badges already had data written (first row only)
     found = 0
     not_in_firebase = 0
 
@@ -205,6 +206,13 @@ def run(use_current=False):
             log("  {:<10} -> exempt (skipped)".format(badge_code), 'INFO')
             continue
 
+        # Duplicate row — clear it and skip writing data
+        if badge_code in written_badges:
+            updates.append({'range': 'B{}'.format(gsheet_row), 'values': [['']]})
+            updates.append({'range': 'D{}'.format(gsheet_row), 'values': [['']]})
+            continue
+
+        written_badges.add(badge_code)
         doctor = doctors.get(badge_code)
         if doctor:
             total_mins = weekly_hours.get(doctor['doc_id'], 0)
