@@ -10,6 +10,13 @@ from shared import entries, LOG_FILE
 from firebase_sync import sync_attendance
 import sheet_sync
 
+try:
+    from google import genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    # will be logged after log() is defined
+
 # ANSI color codes
 class Colors:
     RESET = '\033[0m'
@@ -82,6 +89,18 @@ else:
         "channel_id": int(os.environ["CHANNEL_ID"]),
         "web_port":   int(os.environ.get("WEB_PORT", 5000)),
     }
+
+GEMINI_API_KEY = config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
+
+if GEMINI_AVAILABLE and GEMINI_API_KEY:
+    _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    log("Gemini 2.5 Flash ready as fallback parser", 'SUCCESS')
+elif not GEMINI_AVAILABLE:
+    log("google-genai not installed — Gemini fallback disabled", 'WARNING')
+    _gemini_client = None
+else:
+    log("No GEMINI_API_KEY set — Gemini fallback disabled", 'WARNING')
+    _gemini_client = None
 
 # Discord user IDs that can trigger attendance approval and DM commands
 ADMIN_USER_IDS = {1007633493427228672, 822044765502832701, 579933818862043136}
@@ -169,6 +188,60 @@ def parse_date(date_str):
     
     return dt.strftime("%Y-%m-%d")
 
+async def parse_hours_with_gemini(message_content):
+    """
+    Use Gemini to extract total hours and minutes from a malformed attendance message.
+    Tries gemini-2.5-flash up to 3 times (retry on 503/UNAVAILABLE), then falls back
+    to gemini-2.0-flash. Returns (hours, minutes) or (0, 0) if all attempts fail.
+    """
+    if not _gemini_client:
+        return 0, 0
+
+    prompt = (
+        "You are parsing an EMS attendance log message. "
+        "Extract ONLY the total working hours and minutes from the 'Total Hours' field. "
+        "The field may be misspelled (e.g. 'hurs', 'mutes', 'hrs', 'mns', 'min', etc.). "
+        "Respond with ONLY two integers on one line separated by a space: HOURS MINUTES "
+        "(e.g. '5 30' means 5 hours 30 minutes). "
+        "Do not include any other text, explanation, or punctuation.\n\n"
+        f"Attendance message:\n{message_content}"
+    )
+
+    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
+    for model_name in models_to_try:
+        for attempt in range(3):
+            try:
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda m=model_name: _gemini_client.models.generate_content(
+                        model=m, contents=prompt
+                    )
+                )
+                text = response.text.strip()
+                parts = text.split()
+                if len(parts) >= 2:
+                    hours   = int(parts[0])
+                    minutes = int(parts[1])
+                    log(f"Gemini ({model_name}) parsed: {hours}h {minutes}m from malformed input", 'SUCCESS')
+                    return hours, minutes
+                elif len(parts) == 1:
+                    hours = int(parts[0])
+                    log(f"Gemini ({model_name}) parsed: {hours}h 0m (only hours found)", 'SUCCESS')
+                    return hours, 0
+            except Exception as e:
+                if "503" in str(e) or "UNAVAILABLE" in str(e):
+                    if attempt < 2:
+                        log(f"Gemini ({model_name}) attempt {attempt + 1} got 503 — retrying in 3s...", 'WARNING')
+                        await asyncio.sleep(3)
+                        continue
+                    log(f"Gemini ({model_name}) all retries exhausted — trying next model", 'WARNING')
+                else:
+                    log(f"Gemini ({model_name}) error: {e}", 'ERROR')
+                break
+
+    return 0, 0
+
 async def sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes):
     """Sync attendance to Firebase using REST API"""
     try:
@@ -233,12 +306,17 @@ async def check_reactions_loop():
                 
                 # Check if message has ✅ reaction from admin
                 has_admin_checkmark = False
+                reacting_admin = None
                 for reaction in message.reactions:
                     if str(reaction.emoji) == '✅':
                         # Check if admin reacted
                         users = [user async for user in reaction.users()]
-                        if any(user.id in ADMIN_USER_IDS for user in users):
-                            has_admin_checkmark = True
+                        for user in users:
+                            if user.id in ADMIN_USER_IDS:
+                                has_admin_checkmark = True
+                                reacting_admin = user
+                                break
+                        if has_admin_checkmark:
                             break
                 
                 if not has_admin_checkmark:
@@ -265,7 +343,24 @@ async def check_reactions_loop():
                 
                 # Parse hours and minutes
                 hours, minutes = parse_hours_minutes(total_hours_str)
-                
+
+                # Fallback: if regex parsing returned (0, 0), try Gemini
+                if hours == 0 and minutes == 0:
+                    log(f"Regex parse returned 0h 0m for '{total_hours_str}' — trying Gemini fallback...", 'WARNING')
+                    hours, minutes = await parse_hours_with_gemini(message.content)
+                    if hours == 0 and minutes == 0:
+                        log("Gemini also returned 0h 0m — skipping this attendance record", 'WARNING')
+                        if reacting_admin:
+                            try:
+                                dm = await reacting_admin.create_dm()
+                                await dm.send(
+                                    f"⚠️ Could not auto-parse attendance hours for user <@{discord_user_id}> on {date_str}.\n"
+                                    "Please add their attendance manually in the admin panel."
+                                )
+                            except Exception as dm_err:
+                                log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
+                        continue
+
                 # Parse date to YYYY-MM-DD format
                 date_key = parse_date(date_str)
                 if not date_key:

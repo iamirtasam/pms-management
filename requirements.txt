@@ -3,3 +3,4 @@ flask
 firebase-admin
 gspread
 google-auth
+google-genai
