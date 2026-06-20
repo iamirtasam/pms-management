@@ -83,12 +83,17 @@ if os.path.exists("config.json"):
     with open("config.json") as f:
         config = json.load(f)
 else:
+    # Strip whitespace AND surrounding quotes that Railway sometimes adds
+    def _clean(val):
+        return val.strip().strip('"').strip("'")
     config = {
-        "token":      os.environ["DISCORD_TOKEN"],
-        "guild_id":   int(os.environ["GUILD_ID"]),
-        "channel_id": int(os.environ["CHANNEL_ID"]),
-        "web_port":   int(os.environ.get("WEB_PORT", 5000)),
+        "token":      _clean(os.environ["DISCORD_TOKEN"]),
+        "guild_id":   int(_clean(os.environ["GUILD_ID"])),
+        "channel_id": int(_clean(os.environ["CHANNEL_ID"])),
+        "web_port":   int(_clean(os.environ.get("WEB_PORT", "5000"))),
     }
+
+log(f"Token loaded — length: {len(config['token'])} chars (first 4: {config['token'][:4]}...)", 'INFO')
 
 GEMINI_API_KEY = config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
 

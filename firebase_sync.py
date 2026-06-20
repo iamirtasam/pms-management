@@ -44,24 +44,27 @@ except ImportError:
     FIREBASE_AVAILABLE = False
     log("firebase-admin not installed. Install with: pip install firebase-admin", 'WARNING')
 
-# Load Firebase config from parent directory
+# Load Firebase project ID — env var takes priority (Railway), file is local fallback
 def load_firebase_config():
-    """Extract Firebase config from firebase-config.js"""
+    """Get Firebase project ID from env var or firebase-config.js (local dev)."""
+    # 1. Try environment variable (set this in Railway)
+    project_id = os.environ.get("FIREBASE_PROJECT_ID", "").strip().strip('"').strip("'")
+    if project_id:
+        log(f"Firebase project ID loaded from env: {project_id}", 'INFO')
+        return {'projectId': project_id}
+
+    # 2. Fall back to parsing the JS file (local development)
     config_path = os.path.join(os.path.dirname(__file__), "..", "firebase-config.js")
-    
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            
-        # Extract projectId
         project_match = content.split('projectId:')[1].split('"')[1]
-        
-        return {
-            'projectId': project_match
-        }
+        log(f"Firebase project ID loaded from file: {project_match}", 'INFO')
+        return {'projectId': project_match}
     except Exception as e:
-        log(f"Error loading Firebase config: {e}", 'ERROR')
+        log(f"Error loading Firebase config (set FIREBASE_PROJECT_ID env var on Railway): {e}", 'ERROR')
         return None
+
 
 FIREBASE_CONFIG = load_firebase_config()
 _db = None
