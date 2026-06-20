@@ -162,3 +162,45 @@ def sync_attendance(discord_user_id, date_key, hours, minutes):
     success = add_attendance(doctor_id, date_key, hours, minutes)
     
     return success
+
+def get_pending_welcome_dms():
+    """
+    Query Firestore for doctors with welcomeDmSent == False.
+    Returns a list of dicts: {doc_id, discordId, username, plainPassword, name}
+    """
+    db = get_firestore_db()
+    if not db:
+        log("Firebase not available - cannot query pending DMs", 'ERROR')
+        return []
+    try:
+        docs = db.collection('doctors').where('welcomeDmSent', '==', False).stream()
+        pending = []
+        for doc in docs:
+            d = doc.to_dict()
+            discord_id = d.get('discordId', '').strip()
+            if not discord_id:
+                continue  # no Discord ID — skip silently
+            pending.append({
+                'doc_id':        doc.id,
+                'discordId':     discord_id,
+                'username':      d.get('username', ''),
+                'plainPassword': d.get('plainPassword', d.get('password', '')),
+                'name':          d.get('name', ''),
+            })
+        return pending
+    except Exception as e:
+        log(f"Error querying pending DMs: {e}", 'ERROR')
+        return []
+
+def mark_welcome_dm_sent(doc_id, success=True):
+    """Mark a doctor's welcomeDmSent field as True (or 'failed') in Firestore."""
+    db = get_firestore_db()
+    if not db:
+        return
+    try:
+        db.collection('doctors').document(doc_id).update({
+            'welcomeDmSent': True if success else 'failed'
+        })
+    except Exception as e:
+        log(f"Error marking welcomeDmSent for {doc_id}: {e}", 'ERROR')
+

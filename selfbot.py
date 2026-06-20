@@ -7,7 +7,7 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
-from firebase_sync import sync_attendance
+from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent
 import sheet_sync
 
 try:
@@ -282,8 +282,9 @@ async def on_ready():
         log(f"Marked {len(processed_messages)} existing messages as processed", 'INFO')
         log(f"Watching for ✅ reactions from admins (IDs: {ADMIN_USER_IDS})", 'INFO')
     
-    # Start the polling loop
+    # Start background loops
     client.loop.create_task(check_reactions_loop())
+    client.loop.create_task(check_welcome_dms_loop())
 
 async def check_reactions_loop():
     """Poll for new ✅ reactions every 5 seconds"""
@@ -381,6 +382,48 @@ async def check_reactions_loop():
         
         # Wait 5 seconds before next check
         await asyncio.sleep(5)
+
+PORTAL_URL = "https://legendary-bavarois-b61429.netlify.app/login"
+
+async def check_welcome_dms_loop():
+    """Every 30 seconds, send welcome DMs to newly created doctors."""
+    await client.wait_until_ready()
+    log("Welcome DM loop started (checking every 30 seconds)", 'INFO')
+    while not client.is_closed():
+        try:
+            loop = asyncio.get_event_loop()
+            pending = await loop.run_in_executor(None, get_pending_welcome_dms)
+            for doctor in pending:
+                discord_id = doctor['discordId']
+                doc_id     = doctor['doc_id']
+                username   = doctor['username']
+                password   = doctor['plainPassword']
+                name       = doctor['name']
+                log(f"Sending welcome DM to {name} (Discord ID: {discord_id})", 'INFO')
+                try:
+                    user = await client.fetch_user(int(discord_id))
+                    dm   = await user.create_dm()
+                    msg  = (
+                        f"# PMS Portal\n\n"
+                        f"**Site:** {PORTAL_URL}\n\n"
+                        f"**Username:** {username}\n"
+                        f"**Password:** ||{password}||\n\n"
+                        f"Welcome to the EMS Portal, {name}! Use the link above to sign in."
+                    )
+                    await dm.send(msg)
+                    await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, True)
+                    log(f"Welcome DM sent to {name} ({discord_id})", 'SUCCESS')
+                except discord.NotFound:
+                    log(f"User {discord_id} not found on Discord — marking failed", 'WARNING')
+                    await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, False)
+                except discord.Forbidden:
+                    log(f"Cannot DM user {discord_id} (DMs closed) — marking failed", 'WARNING')
+                    await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, False)
+                except Exception as e:
+                    log(f"Failed to DM {discord_id}: {e}", 'ERROR')
+        except Exception as e:
+            log(f"Error in welcome DM loop: {e}", 'ERROR')
+        await asyncio.sleep(30)
 
 @client.event
 async def on_message(message):
