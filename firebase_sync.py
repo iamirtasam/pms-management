@@ -189,6 +189,7 @@ def get_pending_welcome_dms():
                 'username':      d.get('username', ''),
                 'plainPassword': d.get('plainPassword', d.get('password', '')),
                 'name':          d.get('name', ''),
+                'createdBy':     d.get('createdBy', ''),  # admin username who created the doctor
             })
         return pending
     except Exception as e:
@@ -206,4 +207,22 @@ def mark_welcome_dm_sent(doc_id, success=True):
         })
     except Exception as e:
         log(f"Error marking welcomeDmSent for {doc_id}: {e}", 'ERROR')
+
+def get_admin_discord_id_by_username(username):
+    """Return the Discord ID of the sub-admin with the given username, or None."""
+    if not username:
+        return None
+    db = get_firestore_db()
+    if not db:
+        return None
+    try:
+        docs = db.collection('admins').where('username', '==', username).limit(1).stream()
+        for doc in docs:
+            did = doc.to_dict().get('discordId', '').strip()
+            return did if did else None
+        return None
+    except Exception as e:
+        log(f"Error fetching admin Discord ID for '{username}': {e}", 'ERROR')
+        return None
+
 

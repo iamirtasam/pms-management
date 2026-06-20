@@ -7,7 +7,7 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
-from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent
+from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username
 import sheet_sync
 
 try:
@@ -364,7 +364,7 @@ async def check_reactions_loop():
                                     "Please add their attendance manually in the admin panel."
                                 )
                             except Exception as dm_err:
-                                log(f"Failed to send DM to admin: {dm_err}", 'ERROR')
+                                log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
                         continue
 
                 # Parse date to YYYY-MM-DD format
@@ -372,26 +372,26 @@ async def check_reactions_loop():
                 if not date_key:
                     log(f"Could not parse date: {date_str}", 'WARNING')
                     continue
-                
+
                 log(f"Attendance approved - User: {discord_user_id}, Date: {date_str} → {date_key}, Duration: {hours}h {minutes}m", 'SUCCESS')
-                
+
                 # Sync to Firebase
                 await sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes)
-            
+
             # Clean up old processed messages (keep last 100)
             if len(processed_messages) > 100:
                 processed_messages.clear()
-            
+
         except Exception as e:
             log(f"Error in polling loop: {e}", 'ERROR')
-        
+
         # Wait 5 seconds before next check
         await asyncio.sleep(5)
 
 PORTAL_URL = "https://legendary-bavarois-b61429.netlify.app/login"
 
 async def check_welcome_dms_loop():
-    """Every 30 seconds, send welcome DMs to newly created doctors."""
+    """Every 30 seconds, send welcome DMs to newly created doctors. One attempt only."""
     await client.wait_until_ready()
     log("Welcome DM loop started (checking every 30 seconds)", 'INFO')
     while not client.is_closed():
@@ -404,7 +404,10 @@ async def check_welcome_dms_loop():
                 username   = doctor['username']
                 password   = doctor['plainPassword']
                 name       = doctor['name']
+                created_by = doctor['createdBy']  # admin username who created the doctor
                 log(f"Sending welcome DM to {name} (Discord ID: {discord_id})", 'INFO')
+                dm_sent = False
+                fail_reason = ''
                 try:
                     # Prefer Member from shared guild (more reliable for selfbots)
                     guild  = client.get_guild(config['guild_id'])
@@ -412,9 +415,8 @@ async def check_welcome_dms_loop():
                     if member is None:
                         log(f"Member not in guild cache, falling back to fetch_user", 'WARNING')
                         member = await client.fetch_user(int(discord_id))
-
                     dm  = await member.create_dm()
-                    msg  = (
+                    msg = (
                         f"# PMS Portal\n\n"
                         f"**Site:** {PORTAL_URL}\n\n"
                         f"**Username:** {username}\n"
@@ -422,17 +424,52 @@ async def check_welcome_dms_loop():
                         f"Welcome to the EMS Portal, {name}! Use the link above to sign in."
                     )
                     await dm.send(msg)
-                    await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, True)
+                    dm_sent = True
                     log(f"Welcome DM sent to {name} ({discord_id})", 'SUCCESS')
                 except discord.NotFound:
-                    log(f"User {discord_id} not found on Discord — marking failed", 'WARNING')
-                    await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, False)
+                    fail_reason = f"User ID `{discord_id}` not found on Discord."
+                    log(f"User {discord_id} not found on Discord", 'WARNING')
                 except discord.Forbidden as e:
-                    # Log the actual Discord error text for debugging; do NOT mark failed
-                    # permanently — it will retry next cycle (user may have DMs closed temporarily)
-                    log(f"Forbidden when DMing {discord_id}: {e.text!r} (code {e.code}) — will retry", 'WARNING')
+                    fail_reason = f"Cannot DM `{discord_id}`: {e.text} (code {e.code})"
+                    log(f"Forbidden when DMing {discord_id}: {e.text!r} (code {e.code})", 'WARNING')
                 except Exception as e:
+                    fail_reason = f"Unexpected error DMing `{discord_id}`: {type(e).__name__}: {e}"
                     log(f"Failed to DM {discord_id}: {type(e).__name__}: {e}", 'ERROR')
+
+                # Mark in Firestore — one attempt only, no retry
+                await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, dm_sent)
+
+                # If failed, notify only the admin who created this doctor
+                if not dm_sent:
+                    log(f"DM failed for {name} — looking up creator admin '{created_by}'", 'WARNING')
+                    creator_did = await loop.run_in_executor(
+                        None, get_admin_discord_id_by_username, created_by
+                    )
+                    if creator_did:
+                        try:
+                            admin_user = await client.fetch_user(int(creator_did))
+                            admin_dm   = await admin_user.create_dm()
+                            cred_block = (
+                                f"```\n"
+                                f"# PMS Portal\n\n"
+                                f"**Site:** {PORTAL_URL}\n\n"
+                                f"**Username:** {username}\n"
+                                f"**Password:** ||{password}||\n\n"
+                                f"Welcome to the EMS Portal, {name}! Use the link above to sign in."
+                                f"\n```"
+                            )
+                            await admin_dm.send(
+                                f"\u26a0\ufe0f **Failed to send welcome DM to `{name}`**\n"
+                                f"Discord ID: `{discord_id}`\n"
+                                f"Reason: {fail_reason}\n\n"
+                                f"Please DM them manually with their portal credentials.\n\n"
+                                + cred_block
+                            )
+                            log(f"Notified creator admin {creator_did} about failed DM", 'SUCCESS')
+                        except Exception as ae:
+                            log(f"Could not notify creator admin {creator_did}: {ae}", 'WARNING')
+                    else:
+                        log(f"Creator admin '{created_by}' has no Discord ID set — cannot notify", 'WARNING')
         except Exception as e:
             log(f"Error in welcome DM loop: {e}", 'ERROR')
         await asyncio.sleep(30)
