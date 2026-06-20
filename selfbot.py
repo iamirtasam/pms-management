@@ -364,7 +364,7 @@ async def check_reactions_loop():
                                     "Please add their attendance manually in the admin panel."
                                 )
                             except Exception as dm_err:
-                                log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
+                                log(f"Failed to send DM to admin: {dm_err}", 'ERROR')
                         continue
 
                 # Parse date to YYYY-MM-DD format
@@ -406,8 +406,14 @@ async def check_welcome_dms_loop():
                 name       = doctor['name']
                 log(f"Sending welcome DM to {name} (Discord ID: {discord_id})", 'INFO')
                 try:
-                    user = await client.fetch_user(int(discord_id))
-                    dm   = await user.create_dm()
+                    # Prefer Member from shared guild (more reliable for selfbots)
+                    guild  = client.get_guild(config['guild_id'])
+                    member = guild.get_member(int(discord_id)) if guild else None
+                    if member is None:
+                        log(f"Member not in guild cache, falling back to fetch_user", 'WARNING')
+                        member = await client.fetch_user(int(discord_id))
+
+                    dm  = await member.create_dm()
                     msg  = (
                         f"# PMS Portal\n\n"
                         f"**Site:** {PORTAL_URL}\n\n"
@@ -421,11 +427,12 @@ async def check_welcome_dms_loop():
                 except discord.NotFound:
                     log(f"User {discord_id} not found on Discord — marking failed", 'WARNING')
                     await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, False)
-                except discord.Forbidden:
-                    log(f"Cannot DM user {discord_id} (DMs closed) — marking failed", 'WARNING')
-                    await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, False)
+                except discord.Forbidden as e:
+                    # Log the actual Discord error text for debugging; do NOT mark failed
+                    # permanently — it will retry next cycle (user may have DMs closed temporarily)
+                    log(f"Forbidden when DMing {discord_id}: {e.text!r} (code {e.code}) — will retry", 'WARNING')
                 except Exception as e:
-                    log(f"Failed to DM {discord_id}: {e}", 'ERROR')
+                    log(f"Failed to DM {discord_id}: {type(e).__name__}: {e}", 'ERROR')
         except Exception as e:
             log(f"Error in welcome DM loop: {e}", 'ERROR')
         await asyncio.sleep(30)
