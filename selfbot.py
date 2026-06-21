@@ -447,8 +447,11 @@ async def check_welcome_dms_loop():
                     )
                     if creator_did:
                         try:
-                            admin_user = await client.fetch_user(int(creator_did))
-                            admin_dm   = await admin_user.create_dm()
+                            guild       = client.get_guild(config['guild_id'])
+                            admin_member = guild.get_member(int(creator_did)) if guild else None
+                            if admin_member is None:
+                                admin_member = await client.fetch_user(int(creator_did))
+                            admin_dm   = await admin_member.create_dm()
                             cred_block = (
                                 f"```\n"
                                 f"# PMS Portal\n\n"
