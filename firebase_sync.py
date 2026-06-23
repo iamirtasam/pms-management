@@ -208,6 +208,60 @@ def mark_welcome_dm_sent(doc_id, success=True):
     except Exception as e:
         log(f"Error marking welcomeDmSent for {doc_id}: {e}", 'ERROR')
 
+def update_doctor_name_by_discord_id(discord_id, new_name):
+    """
+    Find the doctor linked to this Discord ID and update their 'name' field.
+    Only writes if the name actually changed. Returns a dict:
+      {'status': 'updated', 'old': ..., 'new': ...}
+      {'status': 'unchanged', 'name': ...}
+      {'status': 'notfound'}
+      {'status': 'error', 'reason': ...}
+    """
+    db = get_firestore_db()
+    if not db:
+        return {'status': 'error', 'reason': 'firebase unavailable'}
+    try:
+        docs = list(
+            db.collection('doctors').where('discordId', '==', discord_id).limit(1).stream()
+        )
+        if not docs:
+            return {'status': 'notfound'}
+        doc     = docs[0]
+        current = (doc.to_dict().get('name') or '').strip()
+        if current == new_name:
+            return {'status': 'unchanged', 'name': current}
+        db.collection('doctors').document(doc.id).update({'name': new_name})
+        log(f"Doctor name updated: '{current}' -> '{new_name}' (discordId {discord_id})", 'SUCCESS')
+        return {'status': 'updated', 'old': current, 'new': new_name}
+    except Exception as e:
+        log(f"Error updating doctor name for {discord_id}: {e}", 'ERROR')
+        return {'status': 'error', 'reason': str(e)}
+
+def get_linked_doctors():
+    """
+    Return a list of all doctors that have a non-empty discordId:
+      [{'doc_id': ..., 'discordId': ..., 'name': ...}, ...]
+    """
+    db = get_firestore_db()
+    if not db:
+        log("Firebase not available - cannot list linked doctors", 'ERROR')
+        return []
+    try:
+        out = []
+        for doc in db.collection('doctors').stream():
+            d   = doc.to_dict()
+            did = (d.get('discordId') or '').strip()
+            if did:
+                out.append({
+                    'doc_id':    doc.id,
+                    'discordId': did,
+                    'name':      (d.get('name') or '').strip(),
+                })
+        return out
+    except Exception as e:
+        log(f"Error listing linked doctors: {e}", 'ERROR')
+        return []
+
 def get_admin_discord_id_by_username(username):
     """Return the Discord ID of the sub-admin with the given username, or None."""
     if not username:

@@ -7,7 +7,7 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
-from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username
+from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors
 import sheet_sync
 
 try:
@@ -149,6 +149,36 @@ def parse_message(content):
         "breaks": get("Break"),  # Will match both "Break" and "Breaks"
         "date": get("Date"),
     }
+
+def format_portal_name(display_name):
+    """
+    Convert a Discord nickname into the portal name format.
+
+    Rules:
+      - Split on '|' and keep only the first two segments (badge + name),
+        dropping any trailing suffix like 'M', 'TRN', 'F', etc.
+      - Badge code (segment 1) is kept exactly as-is (e.g. 'AEMT-26').
+      - Name part (segment 2) is converted to Title Case ('KANWAR' -> 'Kanwar').
+      - Re-joined with ' | ' (space-pipe-space).
+
+    Examples:
+      'AEMT-26 | KANWAR | M'   -> 'AEMT-26 | Kanwar'
+      'SRP-11 | ZAKARIYA | TRN'-> 'SRP-11 | Zakariya'
+      'PR-20 | ABU BAKAR'      -> 'PR-20 | Abu Bakar'
+
+    Returns the formatted string, or None if the nickname has no '|'
+    (i.e. doesn't look like a badge|name format and shouldn't be synced).
+    """
+    if not display_name:
+        return None
+    parts = [p.strip() for p in display_name.split('|')]
+    if len(parts) < 2:
+        return None
+    badge = parts[0]
+    name  = parts[1]
+    if not badge or not name:
+        return None
+    return f"{badge} | {name.title()}"
 
 def parse_hours_minutes(total_hours_str):
     """Parse '5 hours 7 minutes' or '1 hour 30 minutes' into (hours, minutes)"""
@@ -477,6 +507,39 @@ async def check_welcome_dms_loop():
             log(f"Error in welcome DM loop: {e}", 'ERROR')
         await asyncio.sleep(30)
 
+async def sync_member_name(member, source='live'):
+    """Sync a single guild member's nickname to their linked portal doctor."""
+    display = member.nick or member.name
+    portal_name = format_portal_name(display)
+    if not portal_name:
+        return None  # nickname not in 'badge | name' format — ignore
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, update_doctor_name_by_discord_id, str(member.id), portal_name
+    )
+    if result.get('status') == 'updated':
+        log(f"[{source}] Portal name synced for {member.id}: "
+            f"'{result['old']}' -> '{result['new']}'", 'SUCCESS')
+    elif result.get('status') == 'notfound':
+        log(f"[{source}] Nickname changed for {member.id} ({portal_name}) "
+            f"but no linked doctor found", 'INFO')
+    return result
+
+@client.event
+async def on_member_update(before, after):
+    """
+    Fire when a guild member's nickname changes. If it changed and they are
+    a linked doctor, update their portal name automatically.
+    """
+    if after.guild.id != config["guild_id"]:
+        return
+    before_nick = before.nick or before.name
+    after_nick  = after.nick or after.name
+    if before_nick == after_nick:
+        return  # nickname didn't change (some other field did)
+    log(f"Nickname change detected for {after.id}: '{before_nick}' -> '{after_nick}'", 'INFO')
+    await sync_member_name(after, source='live')
+
 @client.event
 async def on_message(message):
     # ── DM command handler ────────────────────────────────────────
@@ -541,6 +604,64 @@ async def handle_command(message, content):
         await asyncio.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    # ── pms!syncnames ─────────────────────────────────────────────
+    elif cmd == 'syncnames':
+        log("pms!syncnames triggered via DM", 'INFO')
+        await message.channel.send("⏳ Re-syncing portal names from current Discord nicknames... please wait.")
+        try:
+            loop   = asyncio.get_event_loop()
+            linked = await loop.run_in_executor(None, get_linked_doctors)
+            guild  = client.get_guild(config['guild_id'])
+            if not guild:
+                await message.channel.send("❌ Could not access the guild.")
+                return
+
+            updated, unchanged, skipped, notfound = [], 0, 0, 0
+            for doc in linked:
+                did = doc['discordId']
+                try:
+                    member = guild.get_member(int(did))
+                    if member is None:
+                        member = await guild.fetch_member(int(did))
+                except Exception:
+                    member = None
+                if member is None:
+                    notfound += 1
+                    continue
+                display     = member.nick or member.name
+                portal_name = format_portal_name(display)
+                if not portal_name:
+                    skipped += 1
+                    continue
+                result = await loop.run_in_executor(
+                    None, update_doctor_name_by_discord_id, did, portal_name
+                )
+                status = result.get('status')
+                if status == 'updated':
+                    updated.append(f"`{result['old']}` → `{result['new']}`")
+                elif status == 'unchanged':
+                    unchanged += 1
+                else:
+                    skipped += 1
+
+            summary = (
+                f"✅ **Name sync complete**\n"
+                f"Updated: **{len(updated)}**  |  Unchanged: **{unchanged}**  |  "
+                f"Skipped: **{skipped}**  |  Member not in server: **{notfound}**"
+            )
+            if updated:
+                detail = "\n".join(updated)
+                # keep within Discord's 2000 char limit
+                if len(detail) > 1700:
+                    detail = detail[:1700] + "\n…(truncated)"
+                summary += "\n\n" + detail
+            await message.channel.send(summary)
+            log(f"syncnames done: {len(updated)} updated, {unchanged} unchanged, "
+                f"{skipped} skipped, {notfound} not in server", 'SUCCESS')
+        except Exception as e:
+            await message.channel.send(f"❌ Name sync failed: `{e}`")
+            log(f"syncnames failed: {e}", 'ERROR')
+
     # ── pms!help ──────────────────────────────────────────────────
     elif cmd == 'help':
         help_text = (
@@ -548,6 +669,7 @@ async def handle_command(message, content):
             "`pms!sheet` — generate sheet for last completed week\n"
             "`pms!sheet --current` — generate sheet for current ongoing week\n"
             "`pms!logs` — get last 100 lines from the log file\n"
+            "`pms!syncnames` — re-sync all portal names from current Discord nicknames\n"
             "`pms!restart` — restart the selfbot process\n"
             "`pms!help` — show this message"
         )
