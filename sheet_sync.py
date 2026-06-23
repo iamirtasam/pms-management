@@ -44,6 +44,11 @@ def log(msg, level='INFO'):
     icons = {'SUCCESS':(C.GREEN,'v'),'ERROR':(C.RED,'x'),'WARNING':(C.YELLOW,'!'),'INFO':(C.CYAN,'i')}
     color, icon = icons.get(level, (C.RESET,'-'))
     print("{g}[{t}]{r} {c}{i} {m}{r}".format(g=C.GRAY,t=now,r=C.RESET,c=color,i=icon,m=msg))
+    try:
+        import console_log
+        console_log.push_log(now, level, msg)
+    except Exception:
+        pass
 
 def get_week_range(use_current=False):
     now  = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)

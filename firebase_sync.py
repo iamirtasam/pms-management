@@ -31,6 +31,12 @@ def log(message, level='INFO'):
         icon = '•'
     
     print(f"{Colors.GRAY}[{now}]{Colors.RESET} {color}{icon} {message}{Colors.RESET}")
+    # Mirror to the web console buffer (best-effort, never raises)
+    try:
+        import console_log
+        console_log.push_log(now, level, message)
+    except Exception:
+        pass
 
 # We'll use the Firebase REST API but need to go through the web SDK
 # Since we can't use Admin SDK without service account, we'll use a workaround

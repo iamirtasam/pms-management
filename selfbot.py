@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
 from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors
 import sheet_sync
+import console_log
 
 try:
     from google import genai
@@ -76,6 +77,11 @@ def log(message, level='INFO'):
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(f"[{now}] {icon} [{level}] {message}\n")
+    except Exception:
+        pass
+    # Mirror to Firestore for the web console (best-effort, never raises)
+    try:
+        console_log.push_log(now, level, message)
     except Exception:
         pass
 
