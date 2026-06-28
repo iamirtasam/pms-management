@@ -243,6 +243,31 @@ def update_doctor_name_by_discord_id(discord_id, new_name):
         log(f"Error updating doctor name for {discord_id}: {e}", 'ERROR')
         return {'status': 'error', 'reason': str(e)}
 
+def get_bot_admin_ids():
+    """
+    Return a set of int Discord user IDs allowed to control the bot, read from
+    bot_config/discord_admins ({ 'admins': [{'name':..., 'discordId':...}, ...] }).
+    Returns an empty set if the doc is missing or Firebase is unavailable —
+    callers should union this with their own permanent fallback IDs.
+    """
+    db = get_firestore_db()
+    if not db:
+        return set()
+    try:
+        snap = db.collection('bot_config').document('discord_admins').get()
+        if not snap.exists:
+            return set()
+        data = snap.to_dict() or {}
+        ids = set()
+        for entry in data.get('admins', []):
+            did = str(entry.get('discordId', '')).strip()
+            if did.isdigit():
+                ids.add(int(did))
+        return ids
+    except Exception as e:
+        log(f"Error fetching bot admin IDs: {e}", 'ERROR')
+        return set()
+
 def get_linked_doctors():
     """
     Return a list of all doctors that have a non-empty discordId:

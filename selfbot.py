@@ -7,7 +7,7 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
-from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors
+from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids
 import sheet_sync
 import console_log
 
@@ -113,8 +113,15 @@ else:
     log("No GEMINI_API_KEY set — Gemini fallback disabled", 'WARNING')
     _gemini_client = None
 
-# Discord user IDs that can trigger attendance approval and DM commands
-ADMIN_USER_IDS = {1007633493427228672, 822044765502832701, 579933818862043136}
+# Permanent fallback admins — always allowed, even if Firestore is empty or
+# unreachable. This prevents the bot from ever being locked out. Additional
+# admins are managed live from the master admin panel (bot_config/discord_admins).
+SEED_ADMIN_USER_IDS = {1007633493427228672, 822044765502832701, 579933818862043136}
+
+# Live set used everywhere for permission checks: seed ∪ panel-managed IDs.
+# Refreshed every 60s by refresh_admin_ids_loop(). Mutated in place (never
+# rebound) so all references stay valid.
+ADMIN_USER_IDS = set(SEED_ADMIN_USER_IDS)
 
 # Track processed messages to avoid duplicates
 processed_messages = set()
@@ -323,9 +330,41 @@ async def on_ready():
         log(f"Marked {len(processed_messages)} existing messages as processed", 'INFO')
         log(f"Watching for ✅ reactions from admins (IDs: {ADMIN_USER_IDS})", 'INFO')
     
+    # Load panel-managed bot admins once before the loops start
+    await refresh_admin_ids(initial=True)
+
     # Start background loops
     client.loop.create_task(check_reactions_loop())
     client.loop.create_task(check_welcome_dms_loop())
+    client.loop.create_task(refresh_admin_ids_loop())
+
+async def refresh_admin_ids(initial=False):
+    """Reload panel-managed bot admins and merge with the permanent seed set."""
+    try:
+        loop = asyncio.get_event_loop()
+        managed = await loop.run_in_executor(None, get_bot_admin_ids)
+        new_set = set(SEED_ADMIN_USER_IDS) | managed
+        if new_set != ADMIN_USER_IDS:
+            added   = new_set - ADMIN_USER_IDS
+            removed = ADMIN_USER_IDS - new_set
+            ADMIN_USER_IDS.clear()
+            ADMIN_USER_IDS.update(new_set)
+            if added:
+                log(f"Bot admins added: {sorted(added)}", 'SUCCESS')
+            if removed:
+                log(f"Bot admins removed: {sorted(removed)}", 'WARNING')
+        if initial:
+            log(f"Bot admins loaded ({len(ADMIN_USER_IDS)} total): {sorted(ADMIN_USER_IDS)}", 'INFO')
+    except Exception as e:
+        log(f"Error refreshing bot admins: {e}", 'ERROR')
+
+async def refresh_admin_ids_loop():
+    """Every 60 seconds, refresh the managed bot-admin list from Firestore."""
+    await client.wait_until_ready()
+    log("Bot-admin refresh loop started (checking every 60 seconds)", 'INFO')
+    while not client.is_closed():
+        await asyncio.sleep(60)
+        await refresh_admin_ids()
 
 async def check_reactions_loop():
     """Poll for new ✅ reactions every 5 seconds"""
