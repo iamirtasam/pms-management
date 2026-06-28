@@ -245,18 +245,24 @@ def update_doctor_name_by_discord_id(discord_id, new_name):
 
 def get_bot_admin_ids():
     """
-    Return a set of int Discord user IDs allowed to control the bot, read from
+    Return the set of int Discord user IDs allowed to control the bot, read from
     bot_config/discord_admins ({ 'admins': [{'name':..., 'discordId':...}, ...] }).
-    Returns an empty set if the doc is missing or Firebase is unavailable —
-    callers should union this with their own permanent fallback IDs.
+
+    Returns:
+      - a set (possibly EMPTY) when the doc was read successfully — this is the
+        authoritative list, including a deliberately empty one.
+      - None when the list could not be determined (Firebase unavailable, read
+        error, or the doc doesn't exist yet). Callers should treat None as
+        "keep whatever you currently have" so a transient hiccup never wipes
+        the admin list.
     """
     db = get_firestore_db()
     if not db:
-        return set()
+        return None
     try:
         snap = db.collection('bot_config').document('discord_admins').get()
         if not snap.exists:
-            return set()
+            return None
         data = snap.to_dict() or {}
         ids = set()
         for entry in data.get('admins', []):
@@ -266,7 +272,30 @@ def get_bot_admin_ids():
         return ids
     except Exception as e:
         log(f"Error fetching bot admin IDs: {e}", 'ERROR')
-        return set()
+        return None
+
+def ensure_bot_admins_seeded(seed_entries):
+    """
+    One-time migration: if bot_config/discord_admins does not exist yet, create
+    it from seed_entries ([{'name':..., 'discordId':...}, ...]) so the current
+    hardcoded admins appear in the panel and become fully manageable. If the doc
+    already exists (even empty), it is left untouched — the panel is authoritative.
+    """
+    db = get_firestore_db()
+    if not db:
+        return
+    try:
+        ref  = db.collection('bot_config').document('discord_admins')
+        snap = ref.get()
+        if snap.exists:
+            return
+        ref.set({
+            'admins':    list(seed_entries),
+            'updatedAt': datetime.utcnow().isoformat() + 'Z',
+        })
+        log(f"Seeded bot_config/discord_admins with {len(seed_entries)} admin(s)", 'SUCCESS')
+    except Exception as e:
+        log(f"Error seeding bot admins: {e}", 'ERROR')
 
 def get_linked_doctors():
     """

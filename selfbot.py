@@ -7,7 +7,7 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
-from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids
+from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids, ensure_bot_admins_seeded
 import sheet_sync
 import console_log
 
@@ -113,14 +113,20 @@ else:
     log("No GEMINI_API_KEY set — Gemini fallback disabled", 'WARNING')
     _gemini_client = None
 
-# Permanent fallback admins — always allowed, even if Firestore is empty or
-# unreachable. This prevents the bot from ever being locked out. Additional
-# admins are managed live from the master admin panel (bot_config/discord_admins).
-SEED_ADMIN_USER_IDS = {1007633493427228672, 822044765502832701, 579933818862043136}
+# Bootstrap admins — used ONLY to seed bot_config/discord_admins the very first
+# time it doesn't exist, and as the in-memory starting set before the first
+# Firestore read. Once the doc exists, the master admin panel is the single
+# source of truth (these become normal, removable entries).
+SEED_ADMIN_ENTRIES = [
+    {"name": "Admin 1", "discordId": "1007633493427228672"},
+    {"name": "Admin 2", "discordId": "822044765502832701"},
+    {"name": "Admin 3", "discordId": "579933818862043136"},
+]
+SEED_ADMIN_USER_IDS = {int(e["discordId"]) for e in SEED_ADMIN_ENTRIES}
 
-# Live set used everywhere for permission checks: seed ∪ panel-managed IDs.
-# Refreshed every 60s by refresh_admin_ids_loop(). Mutated in place (never
-# rebound) so all references stay valid.
+# Live set used everywhere for permission checks. Refreshed every 60s by
+# refresh_admin_ids_loop() from bot_config/discord_admins. Mutated in place
+# (never rebound) so all references stay valid.
 ADMIN_USER_IDS = set(SEED_ADMIN_USER_IDS)
 
 # Track processed messages to avoid duplicates
@@ -330,7 +336,9 @@ async def on_ready():
         log(f"Marked {len(processed_messages)} existing messages as processed", 'INFO')
         log(f"Watching for ✅ reactions from admins (IDs: {ADMIN_USER_IDS})", 'INFO')
     
-    # Load panel-managed bot admins once before the loops start
+    # One-time: create the panel-managed admin list from the bootstrap set if it
+    # doesn't exist yet, then load it. After this, the panel is authoritative.
+    await asyncio.get_event_loop().run_in_executor(None, ensure_bot_admins_seeded, SEED_ADMIN_ENTRIES)
     await refresh_admin_ids(initial=True)
 
     # Start background loops
@@ -339,16 +347,25 @@ async def on_ready():
     client.loop.create_task(refresh_admin_ids_loop())
 
 async def refresh_admin_ids(initial=False):
-    """Reload panel-managed bot admins and merge with the permanent seed set."""
+    """
+    Reload the authoritative bot-admin list from the master admin panel
+    (bot_config/discord_admins). The panel is the single source of truth:
+    whatever it contains IS the admin set. A None result means the list could
+    not be read (Firebase down or doc not created yet) — in that case we keep
+    the current set so a transient hiccup never wipes admins.
+    """
     try:
-        loop = asyncio.get_event_loop()
+        loop    = asyncio.get_event_loop()
         managed = await loop.run_in_executor(None, get_bot_admin_ids)
-        new_set = set(SEED_ADMIN_USER_IDS) | managed
-        if new_set != ADMIN_USER_IDS:
-            added   = new_set - ADMIN_USER_IDS
-            removed = ADMIN_USER_IDS - new_set
+        if managed is None:
+            if initial:
+                log(f"Bot admins: panel list unavailable, using current set: {sorted(ADMIN_USER_IDS)}", 'WARNING')
+            return
+        if managed != ADMIN_USER_IDS:
+            added   = managed - ADMIN_USER_IDS
+            removed = ADMIN_USER_IDS - managed
             ADMIN_USER_IDS.clear()
-            ADMIN_USER_IDS.update(new_set)
+            ADMIN_USER_IDS.update(managed)
             if added:
                 log(f"Bot admins added: {sorted(added)}", 'SUCCESS')
             if removed:
