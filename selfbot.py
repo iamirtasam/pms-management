@@ -9,6 +9,11 @@ from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
 from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids, ensure_bot_admins_seeded
 import sheet_sync
+import attendance_audit
+
+# Pakistan Standard Time is UTC+5 (no DST). Daily audit runs at 1 AM PKT.
+PKT_OFFSET = timedelta(hours=5)
+AUDIT_HOUR = 1
 import console_log
 
 try:
@@ -345,6 +350,104 @@ async def on_ready():
     client.loop.create_task(check_reactions_loop())
     client.loop.create_task(check_welcome_dms_loop())
     client.loop.create_task(refresh_admin_ids_loop())
+    client.loop.create_task(attendance_audit_loop())
+
+def _msg_link(message):
+    return f"https://discord.com/channels/{config['guild_id']}/{config['channel_id']}/{message.id}"
+
+async def run_attendance_audit():
+    """
+    Scan the attendance channel and return (target_date_str, [report_line, ...])
+    for yesterday's (PKT) faulty attendances. Each line is:
+        <@authorId> <reason> <message-link>
+    A message belongs to "yesterday" if its Date field == yesterday, OR (when its
+    date is missing/invalid) it was posted during yesterday PKT — so broken-date
+    attendances are still caught. Already ✅-ticked messages are skipped.
+    """
+    channel = client.get_channel(config["channel_id"])
+    if not channel:
+        log("Audit: attendance channel not found", 'ERROR')
+        return ("", [])
+
+    now_pkt    = datetime.utcnow() + PKT_OFFSET
+    target     = (now_pkt - timedelta(days=1)).date()
+    target_str = target.strftime('%m/%d/%Y')
+    cutoff_utc = datetime.utcnow() - timedelta(days=2)  # perf bound for history scan
+
+    log(f"Running attendance audit for {target_str}", 'INFO')
+
+    wrong = []
+    async for message in channel.history(limit=300):
+        created = message.created_at.replace(tzinfo=None)  # discord gives UTC
+        if created < cutoff_utc:
+            break  # history is newest-first; nothing older matters
+        content = message.content or ''
+        if not attendance_audit.looks_like_attendance(content):
+            continue
+        if any(str(r.emoji) == '✅' for r in message.reactions):
+            continue  # already handled/approved
+
+        status, tup = attendance_audit.message_date_status(content)
+        posted_pkt  = (created + PKT_OFFSET).date()
+        belongs = (
+            (status == 'ok' and tup == (target.month, target.day, target.year))
+            or (status in ('missing', 'invalid') and posted_pkt == target)
+        )
+        if not belongs:
+            continue
+
+        reason = attendance_audit.validate_attendance(content, message.author.id)
+        if reason:
+            wrong.append(f"<@{message.author.id}> {reason} {_msg_link(message)}")
+
+    log(f"Audit complete: {len(wrong)} faulty attendance(s) for {target_str}", 'SUCCESS')
+    return (target_str, wrong)
+
+def build_audit_report(target_str, items):
+    """Format the audit into Discord messages (chunked under the 2000-char limit)."""
+    header = f"# Todays Wrong attendances [{target_str}]\n\n"
+    if not items:
+        return [header + "✅ No faulty attendances found."]
+    blocks, cur = [], ""
+    for line in items:
+        if len(cur) + len(line) + 2 > 1600:
+            blocks.append(cur.rstrip())
+            cur = ""
+        cur += line + "\n\n"
+    if cur.strip():
+        blocks.append(cur.rstrip())
+    return [(header if i == 0 else "") + "```\n" + b + "\n```" for i, b in enumerate(blocks)]
+
+async def dm_all_bot_admins(messages):
+    """DM the given message(s) to every bot-control admin."""
+    guild = client.get_guild(config["guild_id"])
+    sent = 0
+    for aid in list(ADMIN_USER_IDS):
+        try:
+            member = (guild.get_member(aid) if guild else None) or await client.fetch_user(aid)
+            dm = await member.create_dm()
+            for m in messages:
+                await dm.send(m)
+            sent += 1
+        except Exception as e:
+            log(f"Audit: failed to DM admin {aid}: {e}", 'WARNING')
+    log(f"Audit report sent to {sent} bot admin(s)", 'SUCCESS')
+
+async def attendance_audit_loop():
+    """Run the attendance audit once a day at AUDIT_HOUR (PKT) and DM all admins."""
+    await client.wait_until_ready()
+    log(f"Attendance audit loop started (daily at {AUDIT_HOUR}:00 AM PKT)", 'INFO')
+    while not client.is_closed():
+        now_pkt = datetime.utcnow() + PKT_OFFSET
+        nxt = now_pkt.replace(hour=AUDIT_HOUR, minute=0, second=0, microsecond=0)
+        if nxt <= now_pkt:
+            nxt += timedelta(days=1)
+        await asyncio.sleep((nxt - now_pkt).total_seconds())
+        try:
+            target_str, wrong = await run_attendance_audit()
+            await dm_all_bot_admins(build_audit_report(target_str, wrong))
+        except Exception as e:
+            log(f"Attendance audit failed: {e}", 'ERROR')
 
 async def refresh_admin_ids(initial=False):
     """
@@ -666,6 +769,19 @@ async def handle_command(message, content):
         await asyncio.sleep(1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    # ── pms!check ─────────────────────────────────────────────────
+    elif cmd == 'check':
+        log("pms!check triggered via DM", 'INFO')
+        await message.channel.send("⏳ Auditing yesterday's attendances...")
+        try:
+            target_str, wrong = await run_attendance_audit()
+            for m in build_audit_report(target_str, wrong):
+                await message.channel.send(m)
+            log(f"pms!check completed ({len(wrong)} faulty)", 'SUCCESS')
+        except Exception as e:
+            await message.channel.send(f"❌ Audit failed: `{e}`")
+            log(f"pms!check failed: {e}", 'ERROR')
+
     # ── pms!syncnames ─────────────────────────────────────────────
     elif cmd == 'syncnames':
         log("pms!syncnames triggered via DM", 'INFO')
@@ -731,6 +847,7 @@ async def handle_command(message, content):
             "`pms!sheet` — generate sheet for last completed week\n"
             "`pms!sheet --current` — generate sheet for current ongoing week\n"
             "`pms!logs` — get last 100 lines from the log file\n"
+            "`pms!check` — audit yesterday's attendances and list the faulty ones\n"
             "`pms!syncnames` — re-sync all portal names from current Discord nicknames\n"
             "`pms!restart` — restart the selfbot process\n"
             "`pms!help` — show this message"
