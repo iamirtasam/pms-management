@@ -387,16 +387,16 @@ async def run_attendance_audit():
         if any(str(r.emoji) == '✅' for r in message.reactions):
             continue  # already handled/approved
 
-        status, tup = attendance_audit.message_date_status(content)
-        posted_pkt  = (created + PKT_OFFSET).date()
-        belongs = (
-            (status == 'ok' and tup == (target.month, target.day, target.year))
-            or (status in ('missing', 'invalid') and posted_pkt == target)
-        )
-        if not belongs:
+        # Membership is by the day the message was POSTED (PKT), not the written
+        # date — so the audit covers exactly that calendar day (12 AM–11:59 PM)
+        # and never the next day's posts. The written date is then validated
+        # against this posting day.
+        posted_pkt = (created + PKT_OFFSET).date()
+        if posted_pkt != target:
             continue
 
-        reason = attendance_audit.validate_attendance(content, message.author.id)
+        posted_tuple = (posted_pkt.month, posted_pkt.day, posted_pkt.year)
+        reason = attendance_audit.validate_attendance(content, message.author.id, posted_tuple)
         if reason:
             wrong.append(f"<@{message.author.id}> {reason} {_msg_link(message)}")
 

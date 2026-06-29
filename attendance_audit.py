@@ -22,6 +22,7 @@ REASON_TOTAL_WRONG   = "Your **Total Hours** are **Wrong**"
 REASON_TOTAL_MISSING = "Your **Total Hours** are **Missing**"
 REASON_FORMAT        = "Your Attendance **Format** is **Wrong**. Please fix **whatever is wrong in format (spaces or anything else)**"
 REASON_DATE          = "Your **Date Format** is **Wrong**. Please Write date as **Month/Date/Year**"
+REASON_DATE_MISMATCH = "Your **Date** is **Wrong**. Please write the **correct date** as **Month/Date/Year**"
 REASON_TAG           = "You **Tagged** the **Wrong Person** in your Attendance"
 REASON_OFFDUTY       = "Please **Close** your Attendance, Your **Off Duty** time is missing"
 
@@ -125,10 +126,16 @@ def message_date_status(content):
     return classify_date(fields.get('date', ''))
 
 
-def validate_attendance(content, author_id):
+
+
+def validate_attendance(content, author_id, posted_date=None):
     """
     Return a single reason string if the attendance is faulty, else None.
     Checks run in priority order so the most actionable issue is reported first.
+
+    posted_date: optional (month, day, year) tuple of the day the message was
+    posted (Pakistan time). When given, a valid-format date that doesn't equal
+    the posting day is flagged as a wrong date (REASON_DATE_MISMATCH).
     """
     fields, positions = extract_fields(content)
 
@@ -153,9 +160,12 @@ def validate_attendance(content, author_id):
     if not total_field:
         return REASON_TOTAL_MISSING
 
-    # 5. Date not in Month/Day/Year.
-    if classify_date(fields.get('date', ''))[0] != 'ok':
-        return REASON_DATE
+    # 5. Date — must be valid Month/Day/Year AND match the day it was posted.
+    status, tup = classify_date(fields.get('date', ''))
+    if status != 'ok':
+        return REASON_DATE                       # malformed / missing format
+    if posted_date is not None and tup != tuple(posted_date):
+        return REASON_DATE_MISMATCH              # valid format but wrong day
 
     # 6. Total Hours don't match the On/Off times (±1 min tolerance).
     calc   = _sessions_total(fields.get('on_duty', ''), fields.get('off_duty', ''))
