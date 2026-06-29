@@ -14,6 +14,9 @@ import attendance_audit
 # Pakistan Standard Time is UTC+5 (no DST). Daily audit runs at 1 AM PKT.
 PKT_OFFSET = timedelta(hours=5)
 AUDIT_HOUR = 1
+
+# Reaction the bot adds to a faulty attendance (removed on admin ✅ or pms!cross).
+CROSS_EMOJI = '❌'
 import console_log
 
 try:
@@ -399,6 +402,10 @@ async def run_attendance_audit():
         reason = attendance_audit.validate_attendance(content, message.author.id, posted_tuple)
         if reason:
             wrong.append(f"<@{message.author.id}> {reason} {_msg_link(message)}")
+            try:
+                await message.add_reaction(CROSS_EMOJI)
+            except Exception as e:
+                log(f"Audit: couldn't add ❌ to {message.id}: {e}", 'WARNING')
 
     log(f"Audit complete: {len(wrong)} faulty attendance(s) for {target_str}", 'SUCCESS')
     return (target_str, wrong)
@@ -527,7 +534,13 @@ async def check_reactions_loop():
                 processed_messages.add(message.id)
                 
                 log(f"Detected ✅ reaction on message {message.id}", 'INFO')
-                
+
+                # Admin approved — clear the audit's ❌ flag if present
+                try:
+                    await message.remove_reaction(CROSS_EMOJI, client.user)
+                except Exception:
+                    pass
+
                 # Parse the attendance message
                 entry = parse_message(message.content)
                 if not entry:
@@ -782,6 +795,24 @@ async def handle_command(message, content):
             await message.channel.send(f"❌ Audit failed: `{e}`")
             log(f"pms!check failed: {e}", 'ERROR')
 
+    # ── pms!cross <message_id> ────────────────────────────────────
+    elif cmd.startswith('cross'):
+        parts = cmd.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            await message.channel.send("Usage: `pms!cross <message_id>`")
+            return
+        msg_id = int(parts[1])
+        log(f"pms!cross triggered for message {msg_id}", 'INFO')
+        try:
+            channel = client.get_channel(config["channel_id"])
+            target_msg = await channel.fetch_message(msg_id)
+            await target_msg.remove_reaction(CROSS_EMOJI, client.user)
+            await message.channel.send(f"✅ Removed ❌ from message `{msg_id}`.")
+            log(f"pms!cross removed ❌ from {msg_id}", 'SUCCESS')
+        except Exception as e:
+            await message.channel.send(f"❌ Could not remove cross from `{msg_id}`: `{e}`")
+            log(f"pms!cross failed for {msg_id}: {e}", 'ERROR')
+
     # ── pms!syncnames ─────────────────────────────────────────────
     elif cmd == 'syncnames':
         log("pms!syncnames triggered via DM", 'INFO')
@@ -848,6 +879,7 @@ async def handle_command(message, content):
             "`pms!sheet --current` — generate sheet for current ongoing week\n"
             "`pms!logs` — get last 100 lines from the log file\n"
             "`pms!check` — audit yesterday's attendances and list the faulty ones\n"
+            "`pms!cross <message_id>` — remove the ❌ the bot put on an attendance\n"
             "`pms!syncnames` — re-sync all portal names from current Discord nicknames\n"
             "`pms!restart` — restart the selfbot process\n"
             "`pms!help` — show this message"
