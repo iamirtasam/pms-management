@@ -25,6 +25,7 @@ REASON_DATE          = "Your **Date Format** is **Wrong**. Please Write date as 
 REASON_DATE_MISMATCH = "Your **Date** is **Wrong**. Please write the **correct date** as **Month/Date/Year**"
 REASON_TAG           = "You **Tagged** the **Wrong Person** in your Attendance"
 REASON_OFFDUTY       = "Please **Close** your Attendance, Your **Off Duty** time is missing"
+REASON_AMPM          = "Your **AM/PM** is missing"
 
 # Canonical fields in their expected order. Each label tolerates singular/plural
 # and flexible internal spacing.
@@ -94,6 +95,15 @@ def _sessions_total(on_str, off_str):
     return total
 
 
+def _ampm_missing(time_field):
+    """True if any clock time in the field lacks an AM/PM marker (e.g. '4:19')."""
+    for seg in time_field.split('/'):
+        seg = seg.strip()
+        if re.search(r'\d{1,2}:\d{2}', seg) and not re.search(r'\d{1,2}:\d{2}\s*[AaPp]\.?\s*[Mm]?\.?', seg):
+            return True
+    return False
+
+
 def _parse_total_minutes(s):
     """'4 hours 11 minutes' -> 251. Returns None if no number present."""
     if not s.strip():
@@ -160,7 +170,11 @@ def validate_attendance(content, author_id, posted_date=None):
     if not total_field:
         return REASON_TOTAL_MISSING
 
-    # 5. Date — must be valid Month/Day/Year AND match the day it was posted.
+    # 5. On/Off Duty times missing an AM/PM marker.
+    if _ampm_missing(fields.get('on_duty', '')) or _ampm_missing(fields.get('off_duty', '')):
+        return REASON_AMPM
+
+    # 6. Date — must be valid Month/Day/Year AND match the day it was posted.
     status, tup = classify_date(fields.get('date', ''))
     if status != 'ok':
         return REASON_DATE                       # malformed / missing format
