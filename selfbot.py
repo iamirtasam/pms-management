@@ -232,23 +232,49 @@ def parse_hours_minutes(total_hours_str):
     
     return hours, minutes
 
-def parse_date(date_str):
-    """Convert MM/DD/YYYY or DD/MM/YYYY to YYYY-MM-DD, then subtract 1 day"""
-    try:
-        # Try MM/DD/YYYY format first (US format)
-        dt = datetime.strptime(date_str, "%m/%d/%Y")
-    except:
+def parse_date(date_str, posted_pkt_date=None):
+    """
+    Convert the written Date field (MM/DD/YYYY — the required format) to
+    YYYY-MM-DD. The written date is stored EXACTLY as-is: it is already the
+    Pakistani date the doctor worked, so no timezone shifting is needed here.
+    (The old "-1 day" compensated for a display bug in the portal's dateKey(),
+    which converted to UTC and rendered every record one day late. That bug is
+    fixed in firebase-config.js, so the shift must not be applied anymore.)
+
+    If posted_pkt_date (a datetime.date: the PKT day the message was posted)
+    is given and the MM/DD parse lands more than 1 day away from it, we try
+    the DD/MM interpretation — if THAT matches the posting day, the author
+    swapped day/month and we use the corrected date. If neither
+    interpretation is plausible, return None so the record is NOT stored
+    with a wrong date.
+    """
+    def _try(fmt):
         try:
-            # Try DD/MM/YYYY format (European format)
-            dt = datetime.strptime(date_str, "%d/%m/%Y")
-        except:
+            return datetime.strptime(date_str, fmt).date()
+        except Exception:
             return None
-    
-    # Subtract 1 day from the parsed date
-    from datetime import timedelta
-    dt = dt - timedelta(days=1)
-    
-    return dt.strftime("%Y-%m-%d")
+
+    mmdd = _try("%m/%d/%Y")
+    ddmm = _try("%d/%m/%Y")
+
+    candidate = mmdd or ddmm  # prefer the required MM/DD format
+    if not candidate:
+        return None
+
+    if posted_pkt_date:
+        def _plausible(d):
+            return d is not None and abs((posted_pkt_date - d).days) <= 1
+        if not _plausible(candidate):
+            # Likely a day/month swap — accept the other reading only if it
+            # actually matches when the message was posted.
+            other = ddmm if candidate == mmdd else mmdd
+            if _plausible(other):
+                log(f"Date '{date_str}' looks day/month-swapped — corrected to {other}", 'WARNING')
+                candidate = other
+            else:
+                return None
+
+    return candidate.strftime("%Y-%m-%d")
 
 async def parse_hours_with_gemini(message_content):
     """
@@ -575,10 +601,23 @@ async def check_reactions_loop():
                                 log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
                         continue
 
-                # Parse date to YYYY-MM-DD format
-                date_key = parse_date(date_str)
+                # Parse date to YYYY-MM-DD, sanity-checked against the PKT
+                # day the message was posted (catches day/month swaps and
+                # typo'd dates instead of silently storing them wrong)
+                posted_pkt_date = (message.created_at.replace(tzinfo=None) + PKT_OFFSET).date()
+                date_key = parse_date(date_str, posted_pkt_date)
                 if not date_key:
-                    log(f"Could not parse date: {date_str}", 'WARNING')
+                    log(f"Rejected date '{date_str}' (posted {posted_pkt_date} PKT) — not storing", 'WARNING')
+                    if reacting_admin:
+                        try:
+                            dm = await reacting_admin.create_dm()
+                            await dm.send(
+                                f"⚠️ Attendance for <@{discord_user_id}> was approved but its date "
+                                f"`{date_str}` doesn't match the day it was posted ({posted_pkt_date.strftime('%m/%d/%Y')} PKT).\n"
+                                "It was NOT saved — please verify and add it manually in the admin panel."
+                            )
+                        except Exception as dm_err:
+                            log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
                     continue
 
                 log(f"Attendance approved - User: {discord_user_id}, Date: {date_str} → {date_key}, Duration: {hours}h {minutes}m", 'SUCCESS')

@@ -105,7 +105,7 @@ def get_doctors(db):
     return result
 
 def get_weekly_hours(db, friday, thursday):
-    week_dates = {date_key(friday + timedelta(days=i - 1)) for i in range(7)}
+    week_dates = {date_key(friday + timedelta(days=i)) for i in range(7)}
     totals = {}
     for doc in db.collection('attendance').stream():
         d = doc.to_dict()
