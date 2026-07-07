@@ -154,6 +154,28 @@ def add_attendance(doctor_id, date_key, hours, minutes):
         log(f"Error syncing attendance: {e}", 'ERROR')
         return False
 
+def delete_attendance(discord_user_id, date_key):
+    """
+    Delete the attendance record for this Discord user on date_key.
+    Used when a ticked attendance message is edited to a different date —
+    the record at the OLD date must be removed so no stale duplicate remains.
+    """
+    db = get_firestore_db()
+    if not db:
+        log("Firebase not available - cannot delete attendance", 'ERROR')
+        return False
+    doctor_id = get_doctor_by_discord_id(discord_user_id)
+    if not doctor_id:
+        log(f"No doctor found with Discord ID: {discord_user_id}", 'WARNING')
+        return False
+    try:
+        db.collection('attendance').document(f"{doctor_id}_{date_key}").delete()
+        log(f"Deleted attendance {doctor_id}_{date_key} (message edit moved it)", 'SUCCESS')
+        return True
+    except Exception as e:
+        log(f"Error deleting attendance: {e}", 'ERROR')
+        return False
+
 def sync_attendance(discord_user_id, date_key, hours, minutes):
     """Main sync function"""
     log(f"Syncing attendance for Discord ID {discord_user_id}", 'INFO')

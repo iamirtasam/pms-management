@@ -7,7 +7,7 @@ import sys
 import threading
 from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
-from firebase_sync import sync_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids, ensure_bot_admins_seeded
+from firebase_sync import sync_attendance, delete_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids, ensure_bot_admins_seeded
 import sheet_sync
 import attendance_audit
 
@@ -139,6 +139,10 @@ ADMIN_USER_IDS = set(SEED_ADMIN_USER_IDS)
 
 # Track processed messages to avoid duplicates
 processed_messages = set()
+# message.id -> {'content': str, 'user_id': str, 'date_key': str} for messages
+# that were actually synced to the portal. Used to detect edits: when a ticked
+# message's content changes, it is re-parsed and the portal record overwritten.
+synced_messages = {}
 
 # Track when bot started - only process reactions added after this time
 bot_start_time = None
@@ -362,12 +366,27 @@ async def on_ready():
                 uid = entry["user_id"]
                 if entry not in entries.get(uid, []):
                     entries.setdefault(uid, []).append(entry)
-            
+
+                # Record a content fingerprint for already-✅'d messages so
+                # edits made after a bot restart are still detected. This
+                # never syncs anything by itself — the polling loop still
+                # requires an admin ✅ before writing to the portal.
+                if any(str(r.emoji) == '✅' for r in message.reactions):
+                    posted_pkt_date = (message.created_at.replace(tzinfo=None) + PKT_OFFSET).date()
+                    dk = parse_date(entry["date"], posted_pkt_date) if entry["date"] else None
+                    if dk:
+                        synced_messages[message.id] = {
+                            'content':  message.content,
+                            'user_id':  entry["user_id"],
+                            'date_key': dk,
+                        }
+
             # Mark all existing messages as processed to ignore old reactions
             processed_messages.add(message.id)
-        
+
         log(f"Loaded {len(entries)} users from history", 'SUCCESS')
-        log(f"Marked {len(processed_messages)} existing messages as processed", 'INFO')
+        log(f"Marked {len(processed_messages)} existing messages as processed "
+            f"({len(synced_messages)} ticked fingerprints tracked for edit detection)", 'INFO')
         log(f"Watching for ✅ reactions from admins (IDs: {ADMIN_USER_IDS})", 'INFO')
     
     # One-time: create the panel-managed admin list from the bootstrap set if it
@@ -519,25 +538,116 @@ async def refresh_admin_ids_loop():
         await asyncio.sleep(60)
         await refresh_admin_ids()
 
+async def _dm_admin(reacting_admin, text):
+    """Best-effort DM to the admin who ticked a message."""
+    if not reacting_admin:
+        return
+    try:
+        dm = await reacting_admin.create_dm()
+        await dm.send(text)
+    except Exception as dm_err:
+        log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
+
+async def _sync_ticked_message(message, reacting_admin, is_edit=False):
+    """
+    Parse a ✅-approved attendance message and sync it to the portal.
+    Used both for first-time approvals and for re-syncs after the message
+    was edited. Records a content fingerprint in synced_messages so future
+    edits are detected; if an edit moved the attendance to a different
+    date, the record at the old date is deleted first.
+    """
+    prev = synced_messages.get(message.id)
+    what = "edited attendance" if is_edit else "attendance"
+
+    # Parse the attendance message
+    entry = parse_message(message.content)
+    if not entry:
+        log(f"Could not parse {what} message", 'WARNING')
+        return
+
+    discord_user_id = entry["user_id"]
+    total_hours_str = entry["total_hours"]
+    date_str = entry["date"]
+
+    if not total_hours_str or not date_str:
+        log(f"Missing hours or date in {what} message", 'WARNING')
+        return
+
+    # Parse hours and minutes
+    hours, minutes = parse_hours_minutes(total_hours_str)
+
+    # Fallback: if regex parsing returned (0, 0), try Gemini
+    if hours == 0 and minutes == 0:
+        log(f"Regex parse returned 0h 0m for '{total_hours_str}' — trying Gemini fallback...", 'WARNING')
+        hours, minutes = await parse_hours_with_gemini(message.content)
+        if hours == 0 and minutes == 0:
+            log("Gemini also returned 0h 0m — skipping this attendance record", 'WARNING')
+            await _dm_admin(
+                reacting_admin,
+                f"⚠️ Could not auto-parse attendance hours for user <@{discord_user_id}> on {date_str}.\n"
+                "Please add their attendance manually in the admin panel."
+            )
+            return
+
+    # Parse date to YYYY-MM-DD, sanity-checked against the PKT day the
+    # message was posted (catches day/month swaps and typo'd dates
+    # instead of silently storing them wrong)
+    posted_pkt_date = (message.created_at.replace(tzinfo=None) + PKT_OFFSET).date()
+    date_key = parse_date(date_str, posted_pkt_date)
+    if not date_key:
+        log(f"Rejected date '{date_str}' (posted {posted_pkt_date} PKT) — not storing", 'WARNING')
+        await _dm_admin(
+            reacting_admin,
+            f"⚠️ Attendance for <@{discord_user_id}> was approved but its date "
+            f"`{date_str}` doesn't match the day it was posted ({posted_pkt_date.strftime('%m/%d/%Y')} PKT).\n"
+            "It was NOT saved — please verify and add it manually in the admin panel."
+        )
+        return
+
+    # If this message was synced before and the date (or tagged user) has
+    # changed since, remove the record stored from the old version so no
+    # stale duplicate remains on the old date.
+    if prev and prev.get('date_key') and \
+            (prev['date_key'] != date_key or prev['user_id'] != discord_user_id):
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, delete_attendance, prev['user_id'], prev['date_key'])
+
+    log(f"Attendance {'updated (message edit)' if is_edit else 'approved'} - "
+        f"User: {discord_user_id}, Date: {date_str} → {date_key}, Duration: {hours}h {minutes}m", 'SUCCESS')
+
+    # Sync to Firebase (doc ID is doctorId_dateKey, so this overwrites)
+    await sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes)
+
+    # Remember what was stored so future edits can be detected/diffed
+    synced_messages[message.id] = {
+        'content':  message.content,
+        'user_id':  discord_user_id,
+        'date_key': date_key,
+    }
+
 async def check_reactions_loop():
-    """Poll for new ✅ reactions every 5 seconds"""
+    """Poll every 5 seconds for new ✅ reactions and for edits to already-synced messages"""
     await client.wait_until_ready()
     channel = client.get_channel(config["channel_id"])
-    
+
     if not channel:
         log(f"Could not find channel {config['channel_id']}", 'ERROR')
         return
-    
+
     log("Reaction polling started (checking every 5 seconds)", 'INFO')
-    
+
     while not client.is_closed():
         try:
             # Fetch recent messages (last 50)
             async for message in channel.history(limit=50):
-                # Skip if already processed
-                if message.id in processed_messages:
+                prev = synced_messages.get(message.id)
+                is_edit = prev is not None and prev['content'] != message.content
+
+                # Skip if already processed — unless the content changed
+                # since we synced it (the doctor edited their attendance)
+                if message.id in processed_messages and not is_edit:
                     continue
-                
+
                 # Check if message has ✅ reaction from admin
                 has_admin_checkmark = False
                 reacting_admin = None
@@ -552,14 +662,27 @@ async def check_reactions_loop():
                                 break
                         if has_admin_checkmark:
                             break
-                
+
                 if not has_admin_checkmark:
+                    if is_edit:
+                        # The admin's ✅ is gone but the message was edited.
+                        # Leave the stored record alone (only a ✅ authorizes
+                        # a sync), update the fingerprint so this edit isn't
+                        # re-logged every 5 seconds, and un-mark the message
+                        # as processed so a future re-tick is treated as a
+                        # fresh approval of the edited content.
+                        synced_messages[message.id]['content'] = message.content
+                        processed_messages.discard(message.id)
+                        log(f"Message {message.id} was edited but has no admin ✅ — waiting for re-approval", 'WARNING')
                     continue
-                
+
                 # Mark as processed
                 processed_messages.add(message.id)
-                
-                log(f"Detected ✅ reaction on message {message.id}", 'INFO')
+
+                if is_edit:
+                    log(f"Detected edit on ticked message {message.id} — re-syncing", 'INFO')
+                else:
+                    log(f"Detected ✅ reaction on message {message.id}", 'INFO')
 
                 # Admin approved — clear the audit's ❌ flag if present
                 try:
@@ -567,67 +690,16 @@ async def check_reactions_loop():
                 except Exception:
                     pass
 
-                # Parse the attendance message
-                entry = parse_message(message.content)
-                if not entry:
-                    log("Could not parse attendance message", 'WARNING')
-                    continue
-                
-                discord_user_id = entry["user_id"]
-                total_hours_str = entry["total_hours"]
-                date_str = entry["date"]
-                
-                if not total_hours_str or not date_str:
-                    log("Missing hours or date in message", 'WARNING')
-                    continue
-                
-                # Parse hours and minutes
-                hours, minutes = parse_hours_minutes(total_hours_str)
-
-                # Fallback: if regex parsing returned (0, 0), try Gemini
-                if hours == 0 and minutes == 0:
-                    log(f"Regex parse returned 0h 0m for '{total_hours_str}' — trying Gemini fallback...", 'WARNING')
-                    hours, minutes = await parse_hours_with_gemini(message.content)
-                    if hours == 0 and minutes == 0:
-                        log("Gemini also returned 0h 0m — skipping this attendance record", 'WARNING')
-                        if reacting_admin:
-                            try:
-                                dm = await reacting_admin.create_dm()
-                                await dm.send(
-                                    f"⚠️ Could not auto-parse attendance hours for user <@{discord_user_id}> on {date_str}.\n"
-                                    "Please add their attendance manually in the admin panel."
-                                )
-                            except Exception as dm_err:
-                                log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
-                        continue
-
-                # Parse date to YYYY-MM-DD, sanity-checked against the PKT
-                # day the message was posted (catches day/month swaps and
-                # typo'd dates instead of silently storing them wrong)
-                posted_pkt_date = (message.created_at.replace(tzinfo=None) + PKT_OFFSET).date()
-                date_key = parse_date(date_str, posted_pkt_date)
-                if not date_key:
-                    log(f"Rejected date '{date_str}' (posted {posted_pkt_date} PKT) — not storing", 'WARNING')
-                    if reacting_admin:
-                        try:
-                            dm = await reacting_admin.create_dm()
-                            await dm.send(
-                                f"⚠️ Attendance for <@{discord_user_id}> was approved but its date "
-                                f"`{date_str}` doesn't match the day it was posted ({posted_pkt_date.strftime('%m/%d/%Y')} PKT).\n"
-                                "It was NOT saved — please verify and add it manually in the admin panel."
-                            )
-                        except Exception as dm_err:
-                            log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
-                    continue
-
-                log(f"Attendance approved - User: {discord_user_id}, Date: {date_str} → {date_key}, Duration: {hours}h {minutes}m", 'SUCCESS')
-
-                # Sync to Firebase
-                await sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes)
+                await _sync_ticked_message(message, reacting_admin, is_edit=is_edit)
 
             # Clean up old processed messages (keep last 100)
             if len(processed_messages) > 100:
                 processed_messages.clear()
+            # Bound the edit-tracking map: keep only the newest ~200 entries
+            # (anything older has scrolled far out of the 50-message window)
+            if len(synced_messages) > 200:
+                for mid in sorted(synced_messages)[:-200]:
+                    del synced_messages[mid]
 
         except Exception as e:
             log(f"Error in polling loop: {e}", 'ERROR')
