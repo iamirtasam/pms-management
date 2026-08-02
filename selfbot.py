@@ -5,6 +5,8 @@ import asyncio
 import os
 import sys
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from shared import entries, LOG_FILE
 from firebase_sync import sync_attendance, delete_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids, ensure_bot_admins_seeded
@@ -146,6 +148,119 @@ synced_messages = {}
 
 # Track when bot started - only process reactions added after this time
 bot_start_time = None
+
+# Set True once the background loops are running, so a gateway reconnect
+# doesn't start a second copy of each one.
+_loops_started = False
+
+# ── Blocking-call isolation ───────────────────────────────────────────
+# Every Firestore/Sheets call is blocking, so it runs in a thread. The default
+# asyncio executor was used before, which caused the "dies after a day" bug:
+# a hung gRPC call occupies a pool thread forever, and once all threads are
+# stuck EVERY loop that needs one silently stops — ✅ syncing, the daily audit,
+# welcome DMs — while pure-Discord commands like pms!restart still respond.
+# A dedicated pool plus a hard timeout on every call bounds that failure.
+_BLOCKING_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix='blocking')
+
+DEFAULT_CALL_TIMEOUT = 90     # outer deadline; some helpers make 2 Firestore
+                              # round-trips (lookup + write) at FS_TIMEOUT=20s
+                              # each, so this must leave comfortable headroom
+                              # or a slow-but-working call is thrown away.
+SHEET_CALL_TIMEOUT   = 600    # sheet generation is legitimately slow
+
+
+async def run_blocking(fn, *args, timeout=DEFAULT_CALL_TIMEOUT, label=None):
+    """
+    Run a blocking function off the event loop with a hard deadline.
+
+    Raises asyncio.TimeoutError if it overruns. The worker thread may still be
+    stuck afterwards, but the caller is freed and the loop keeps running, so a
+    single bad call can no longer wedge the whole bot.
+    """
+    global _consecutive_timeouts
+    name = label or getattr(fn, '__name__', repr(fn))
+    loop = asyncio.get_running_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(_BLOCKING_POOL, lambda: fn(*args)), timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        _consecutive_timeouts += 1
+        log(f"Blocking call '{name}' exceeded {timeout}s — abandoned "
+            f"(consecutive timeouts: {_consecutive_timeouts})", 'ERROR')
+        raise
+    _consecutive_timeouts = 0
+    return result
+
+
+# ── Watchdog ──────────────────────────────────────────────────────────
+# Two independent health signals:
+#
+#  1. Heartbeats. Each long-lived loop stamps its name every cycle. A loop
+#     that stops ticking entirely is wedged.
+#  2. Consecutive blocking-call timeouts. This is the real failure mode: the
+#     loops keep ticking happily while every Firestore call times out, because
+#     each caller catches the error and moves on. Heartbeats alone would never
+#     notice, so the bot would look alive while syncing nothing.
+#
+# Either signal exits the process; Railway then starts a clean one.
+_heartbeats = {}
+_HEARTBEAT_LOCK = threading.Lock()
+_consecutive_timeouts = 0
+
+# Enough consecutive failures that a transient Firestore blip can't trip it,
+# but a genuinely wedged pool is caught within minutes.
+MAX_CONSECUTIVE_TIMEOUTS = 8
+
+# loop name -> seconds without a heartbeat that means "wedged". Set well above
+# each loop's worst-case pass: the sweep can spend minutes on a single message
+# (Gemini fallback + Firestore retries), and killing a healthy bot mid-sync is
+# worse than reacting slowly.
+WATCHDOG_LIMITS = {
+    'reactions':   1800,    # beats per message, and every 60s pass
+    'welcome_dms': 1800,    # beats every 30s pass
+    'admin_ids':   1800,    # beats every 60s pass
+    'audit':       90000,   # fires once a day (~86400s)
+}
+
+
+def beat(name):
+    with _HEARTBEAT_LOCK:
+        _heartbeats[name] = time.monotonic()
+
+
+async def watchdog_loop():
+    """Exit the process if the bot is unhealthy in a way it can't self-repair."""
+    await client.wait_until_ready()
+    for n in WATCHDOG_LIMITS:
+        beat(n)
+    log("Watchdog started (health-checking background loops every 60s)", 'INFO')
+    while not client.is_closed():
+        await asyncio.sleep(60)
+
+        if _consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
+            log(f"WATCHDOG: {_consecutive_timeouts} consecutive blocking-call "
+                f"timeouts — Firestore is unreachable, restarting process", 'ERROR')
+            await asyncio.sleep(3)   # let the console mirror flush
+            os._exit(1)
+
+        now = time.monotonic()
+        with _HEARTBEAT_LOCK:
+            snapshot = dict(_heartbeats)
+        for name, limit in WATCHDOG_LIMITS.items():
+            last = snapshot.get(name)
+            if last is None:
+                continue
+            stalled = now - last
+            if stalled > limit:
+                log(f"WATCHDOG: '{name}' has not ticked for {int(stalled)}s "
+                    f"(limit {limit}s) — restarting process", 'ERROR')
+                # Give the console mirror a moment to flush, then bail out.
+                # os._exit, not sys.exit: a wedged pool thread is non-daemon
+                # work that would otherwise block interpreter shutdown.
+                await asyncio.sleep(3)
+                os._exit(1)
+
 
 client = discord.Client()
 
@@ -303,12 +418,11 @@ async def parse_hours_with_gemini(message_content):
     for model_name in models_to_try:
         for attempt in range(3):
             try:
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
+                response = await run_blocking(
                     lambda m=model_name: _gemini_client.models.generate_content(
                         model=m, contents=prompt
-                    )
+                    ),
+                    timeout=60, label=f'gemini:{model_name}'
                 )
                 text = response.text.strip()
                 parts = text.split()
@@ -321,6 +435,9 @@ async def parse_hours_with_gemini(message_content):
                     hours = int(parts[0])
                     log(f"Gemini ({model_name}) parsed: {hours}h 0m (only hours found)", 'SUCCESS')
                     return hours, 0
+            except asyncio.TimeoutError:
+                log(f"Gemini ({model_name}) timed out — trying next model", 'WARNING')
+                break
             except Exception as e:
                 if "503" in str(e) or "UNAVAILABLE" in str(e):
                     if attempt < 2:
@@ -335,21 +452,31 @@ async def parse_hours_with_gemini(message_content):
     return 0, 0
 
 async def sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes):
-    """Sync attendance to Firebase using REST API"""
+    """Sync attendance to Firebase (bounded by a hard timeout)"""
     try:
-        # Run sync in thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(None, sync_attendance, discord_user_id, date_key, hours, minutes)
-        return success
+        return await run_blocking(
+            sync_attendance, discord_user_id, date_key, hours, minutes,
+            label='sync_attendance'
+        )
     except Exception as e:
-        print(f"❌ Failed to sync attendance: {e}")
+        log(f"Failed to sync attendance: {e}", 'ERROR')
         return False
 
 @client.event
 async def on_ready():
-    global bot_start_time
+    global bot_start_time, _loops_started
     bot_start_time = datetime.utcnow()  # Record when bot started
-    
+
+    if _loops_started:
+        # on_ready fires again after every gateway reconnect. Re-running the
+        # history scan and (worse) starting a second copy of every background
+        # loop would multiply Firestore traffic on each reconnect, so a
+        # reconnect is just logged. Keyed on the loops actually being up, not
+        # merely on "we got here before" — a startup that aborted partway
+        # must be allowed to retry on the next reconnect.
+        log("Reconnected to Discord (background loops already running)", 'INFO')
+        return
+
     clear_screen()
     print_banner()
     
@@ -359,49 +486,76 @@ async def on_ready():
     
     channel = client.get_channel(config["channel_id"])
     if channel:
-        # Load message history but mark all existing messages as already processed
-        async for message in channel.history(limit=200):
-            entry = parse_message(message.content)
-            if entry:
-                uid = entry["user_id"]
-                if entry not in entries.get(uid, []):
-                    entries.setdefault(uid, []).append(entry)
+        try:
+            async for message in channel.history(limit=200):
+                entry = parse_message(message.content)
+                ticked = any(str(r.emoji) == '✅' for r in message.reactions)
+                if entry:
+                    uid = entry["user_id"]
+                    if entry not in entries.get(uid, []):
+                        entries.setdefault(uid, []).append(entry)
 
-                # Record a content fingerprint for already-✅'d messages so
-                # edits made after a bot restart are still detected. This
-                # never syncs anything by itself — the polling loop still
-                # requires an admin ✅ before writing to the portal.
-                if any(str(r.emoji) == '✅' for r in message.reactions):
-                    posted_pkt_date = (message.created_at.replace(tzinfo=None) + PKT_OFFSET).date()
-                    dk = parse_date(entry["date"], posted_pkt_date) if entry["date"] else None
-                    if dk:
-                        synced_messages[message.id] = {
-                            'content':  message.content,
-                            'user_id':  entry["user_id"],
-                            'date_key': dk,
-                        }
+                    # Record a content fingerprint for already-✅'d messages so
+                    # edits made after a bot restart are still detected. This
+                    # never syncs anything by itself — an admin ✅ is still
+                    # required before anything is written to the portal.
+                    if ticked:
+                        posted_pkt_date = (message.created_at.replace(tzinfo=None) + PKT_OFFSET).date()
+                        dk = parse_date(entry["date"], posted_pkt_date) if entry["date"] else None
+                        if dk:
+                            synced_messages[message.id] = {
+                                'content':  message.content,
+                                'user_id':  entry["user_id"],
+                                'date_key': dk,
+                            }
 
-            # Mark all existing messages as processed to ignore old reactions
-            processed_messages.add(message.id)
+                # Suppress old messages so startup doesn't re-sync history.
+                # A ticked attendance WITHOUT a fingerprint is deliberately left
+                # unclaimed: that is either a ✅ applied while the bot was down
+                # or a previous sync that failed, and the sweep must retry it.
+                if not (ticked and entry and message.id not in synced_messages):
+                    processed_messages.add(message.id)
 
-        log(f"Loaded {len(entries)} users from history", 'SUCCESS')
-        log(f"Marked {len(processed_messages)} existing messages as processed "
-            f"({len(synced_messages)} ticked fingerprints tracked for edit detection)", 'INFO')
-        log(f"Watching for ✅ reactions from admins (IDs: {ADMIN_USER_IDS})", 'INFO')
-    
+            log(f"Loaded {len(entries)} users from history", 'SUCCESS')
+            log(f"Marked {len(processed_messages)} existing messages as processed "
+                f"({len(synced_messages)} ticked fingerprints tracked for edit detection)", 'INFO')
+            log(f"Watching for ✅ reactions from admins (IDs: {ADMIN_USER_IDS})", 'INFO')
+        except Exception as e:
+            log(f"History scan failed: {e} — continuing startup", 'ERROR')
+    else:
+        log(f"Channel {config['channel_id']} not in cache at startup — "
+            f"the safety sweep will pick it up", 'WARNING')
+
     # One-time: create the panel-managed admin list from the bootstrap set if it
     # doesn't exist yet, then load it. After this, the panel is authoritative.
-    await asyncio.get_event_loop().run_in_executor(None, ensure_bot_admins_seeded, SEED_ADMIN_ENTRIES)
-    await refresh_admin_ids(initial=True)
+    try:
+        await run_blocking(ensure_bot_admins_seeded, SEED_ADMIN_ENTRIES,
+                           label='ensure_bot_admins_seeded')
+    except Exception as e:
+        log(f"Could not seed bot admins: {e}", 'WARNING')
+    try:
+        await refresh_admin_ids(initial=True)
+    except Exception as e:
+        log(f"Initial bot-admin load failed: {e} — using seed set", 'WARNING')
 
-    # Start background loops
-    client.loop.create_task(check_reactions_loop())
+    # Start background loops. _loops_started is set only after this succeeds:
+    # if startup aborted earlier, a later reconnect must be allowed to retry,
+    # otherwise the bot sits there with no loops running at all.
+    client.loop.create_task(reaction_safety_sweep())
     client.loop.create_task(check_welcome_dms_loop())
     client.loop.create_task(refresh_admin_ids_loop())
     client.loop.create_task(attendance_audit_loop())
+    client.loop.create_task(watchdog_loop())
+    _loops_started = True
+    log("Background loops started", 'SUCCESS')
 
 def _msg_link(message):
     return f"https://discord.com/channels/{config['guild_id']}/{config['channel_id']}/{message.id}"
+
+
+@client.event
+async def on_disconnect():
+    log("Disconnected from Discord gateway — will auto-reconnect", 'WARNING')
 
 async def run_attendance_audit():
     """
@@ -489,6 +643,7 @@ async def attendance_audit_loop():
     """Run the attendance audit once a day at AUDIT_HOUR (PKT) and DM all admins."""
     await client.wait_until_ready()
     log(f"Attendance audit loop started (daily at {AUDIT_HOUR}:00 AM PKT)", 'INFO')
+    beat('audit')
     while not client.is_closed():
         now_pkt = datetime.utcnow() + PKT_OFFSET
         nxt = now_pkt.replace(hour=AUDIT_HOUR, minute=0, second=0, microsecond=0)
@@ -496,10 +651,17 @@ async def attendance_audit_loop():
             nxt += timedelta(days=1)
         await asyncio.sleep((nxt - now_pkt).total_seconds())
         try:
-            target_str, wrong = await run_attendance_audit()
-            await dm_all_bot_admins(build_audit_report(target_str, wrong))
+            # Bounded: the audit is pure Discord HTTP, and an unbounded hang
+            # here is exactly why the daily report silently stopped arriving.
+            target_str, wrong = await asyncio.wait_for(run_attendance_audit(), timeout=900)
+            await asyncio.wait_for(
+                dm_all_bot_admins(build_audit_report(target_str, wrong)), timeout=900
+            )
+        except asyncio.TimeoutError:
+            log("Attendance audit timed out — skipping today's report", 'ERROR')
         except Exception as e:
             log(f"Attendance audit failed: {e}", 'ERROR')
+        beat('audit')
 
 async def refresh_admin_ids(initial=False):
     """
@@ -510,8 +672,7 @@ async def refresh_admin_ids(initial=False):
     the current set so a transient hiccup never wipes admins.
     """
     try:
-        loop    = asyncio.get_event_loop()
-        managed = await loop.run_in_executor(None, get_bot_admin_ids)
+        managed = await run_blocking(get_bot_admin_ids, label='get_bot_admin_ids')
         if managed is None:
             if initial:
                 log(f"Bot admins: panel list unavailable, using current set: {sorted(ADMIN_USER_IDS)}", 'WARNING')
@@ -536,7 +697,11 @@ async def refresh_admin_ids_loop():
     log("Bot-admin refresh loop started (checking every 60 seconds)", 'INFO')
     while not client.is_closed():
         await asyncio.sleep(60)
-        await refresh_admin_ids()
+        try:
+            await refresh_admin_ids()
+        except Exception as e:
+            log(f"Bot-admin refresh failed: {e}", 'ERROR')
+        beat('admin_ids')
 
 async def _dm_admin(reacting_admin, text):
     """Best-effort DM to the admin who ticked a message."""
@@ -555,6 +720,10 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
     was edited. Records a content fingerprint in synced_messages so future
     edits are detected; if an edit moved the attendance to a different
     date, the record at the old date is deleted first.
+
+    Returns True only when the portal actually holds the record. Any other
+    result means the caller must NOT treat the message as handled — see
+    _release() at the call sites, which lets the safety sweep retry.
     """
     prev = synced_messages.get(message.id)
     what = "edited attendance" if is_edit else "attendance"
@@ -563,7 +732,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
     entry = parse_message(message.content)
     if not entry:
         log(f"Could not parse {what} message", 'WARNING')
-        return
+        return False
 
     discord_user_id = entry["user_id"]
     total_hours_str = entry["total_hours"]
@@ -571,7 +740,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
 
     if not total_hours_str or not date_str:
         log(f"Missing hours or date in {what} message", 'WARNING')
-        return
+        return False
 
     # Parse hours and minutes
     hours, minutes = parse_hours_minutes(total_hours_str)
@@ -587,7 +756,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
                 f"⚠️ Could not auto-parse attendance hours for user <@{discord_user_id}> on {date_str}.\n"
                 "Please add their attendance manually in the admin panel."
             )
-            return
+            return False
 
     # Parse date to YYYY-MM-DD, sanity-checked against the PKT day the
     # message was posted (catches day/month swaps and typo'd dates
@@ -602,21 +771,32 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
             f"`{date_str}` doesn't match the day it was posted ({posted_pkt_date.strftime('%m/%d/%Y')} PKT).\n"
             "It was NOT saved — please verify and add it manually in the admin panel."
         )
-        return
+        return False
 
     # If this message was synced before and the date (or tagged user) has
     # changed since, remove the record stored from the old version so no
     # stale duplicate remains on the old date.
     if prev and prev.get('date_key') and \
             (prev['date_key'] != date_key or prev['user_id'] != discord_user_id):
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, delete_attendance, prev['user_id'], prev['date_key'])
+        try:
+            await run_blocking(delete_attendance, prev['user_id'], prev['date_key'],
+                               label='delete_attendance')
+        except Exception as e:
+            # Leave the message unhandled so the sweep retries; writing the new
+            # record now would leave a duplicate on the old date.
+            log(f"Could not delete stale record at {prev['date_key']}: {e} — will retry", 'WARNING')
+            return False
+
+    # Sync to Firebase (doc ID is doctorId_dateKey, so this overwrites)
+    ok = await sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes)
+    if not ok:
+        # Firestore refused or timed out. Do NOT fingerprint it — the sweep
+        # must be able to pick this up again, or the shift is never recorded.
+        log(f"Sync FAILED for <@{discord_user_id}> on {date_key} — will retry", 'ERROR')
+        return False
 
     log(f"Attendance {'updated (message edit)' if is_edit else 'approved'} - "
         f"User: {discord_user_id}, Date: {date_str} → {date_key}, Duration: {hours}h {minutes}m", 'SUCCESS')
-
-    # Sync to Firebase (doc ID is doctorId_dateKey, so this overwrites)
-    await sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes)
 
     # Remember what was stored so future edits can be detected/diffed
     synced_messages[message.id] = {
@@ -624,88 +804,216 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
         'user_id':  discord_user_id,
         'date_key': date_key,
     }
+    return True
 
-async def check_reactions_loop():
-    """Poll every 5 seconds for new ✅ reactions and for edits to already-synced messages"""
-    await client.wait_until_ready()
-    channel = client.get_channel(config["channel_id"])
+def _reserve(message_id):
+    """
+    Claim a message so the live event and the sweep can't both process it.
+    Returns False if it is already claimed. Must be called BEFORE any await,
+    otherwise the two paths can interleave during an HTTP round-trip.
+    """
+    if message_id in processed_messages:
+        return False
+    processed_messages.add(message_id)
+    return True
 
-    if not channel:
-        log(f"Could not find channel {config['channel_id']}", 'ERROR')
+
+def _release(message_id):
+    """
+    Un-claim a message whose sync did not reach the portal, so the safety
+    sweep will try again. Without this a transient Firestore failure would
+    silently lose an approved attendance forever.
+    """
+    processed_messages.discard(message_id)
+
+
+@client.event
+async def on_raw_reaction_add(payload):
+    """
+    Primary ✅ path: fires the instant an admin ticks a message.
+
+    Replaces the old 5-second poll that re-scanned 50 messages and issued a
+    reaction.users() HTTP request for every ✅ on every pass — thousands of
+    requests an hour, which eventually got the account rate-limited into a
+    stall. This costs zero HTTP calls until an actual tick happens.
+    """
+    if payload.channel_id != config["channel_id"]:
+        return
+    if str(payload.emoji) != '✅':
+        return
+    if payload.user_id not in ADMIN_USER_IDS:
+        return
+    # Claim before awaiting, or the sweep may grab it during fetch_message.
+    if not _reserve(payload.message_id):
         return
 
-    log("Reaction polling started (checking every 5 seconds)", 'INFO')
+    ok = False
+    try:
+        channel = client.get_channel(config["channel_id"])
+        if channel is None:
+            return
+        message = await channel.fetch_message(payload.message_id)
+        try:
+            reacting_admin = client.get_user(payload.user_id) or await client.fetch_user(payload.user_id)
+        except Exception:
+            reacting_admin = None
+
+        log(f"✅ reaction detected on message {message.id} (live event)", 'INFO')
+        try:
+            await message.remove_reaction(CROSS_EMOJI, client.user)
+        except Exception:
+            pass
+        ok = await _sync_ticked_message(message, reacting_admin, is_edit=False)
+    except Exception as e:
+        log(f"Error handling ✅ event for {payload.message_id}: {e}", 'ERROR')
+    finally:
+        if not ok:
+            _release(payload.message_id)
+
+
+@client.event
+async def on_raw_message_edit(payload):
+    """
+    Re-sync when a doctor edits an attendance message.
+
+    Uses the RAW event deliberately: discord.py-self only dispatches the
+    cooked on_message_edit when the message is in its 1000-entry cache, so
+    edits to anything posted before a restart would never be seen. The raw
+    event always fires. The payload's Message is rebuilt from the gateway
+    frame and carries NO reactions, so the message is refetched to find the
+    admin ✅ before anything is written.
+    """
+    if payload.channel_id != config["channel_id"]:
+        return
+    mid  = payload.message_id
+    prev = synced_messages.get(mid)
+    if prev is None:
+        # Never synced. If it's a pending approval the sweep will handle it;
+        # nothing here to re-sync.
+        return
+
+    try:
+        channel = client.get_channel(config["channel_id"])
+        if channel is None:
+            return
+        message = await channel.fetch_message(mid)
+    except Exception as e:
+        log(f"Could not fetch edited message {mid}: {e}", 'WARNING')
+        return
+
+    if prev.get('content') == message.content:
+        return  # metadata-only edit (embed, pin, etc.)
+
+    admin = await _admin_who_ticked(message)
+    if admin is None:
+        # Approval was removed. Keep the stored record (only a ✅ authorises a
+        # write) but refresh the fingerprint so this edit isn't reprocessed,
+        # and un-claim it so a future re-tick counts as a fresh approval.
+        entry = synced_messages.get(mid)
+        if entry is not None:
+            entry['content'] = message.content
+        _release(mid)
+        log(f"Message {mid} edited but has no admin ✅ — waiting for re-approval", 'WARNING')
+        return
+
+    processed_messages.add(mid)
+    log(f"Detected edit on ticked message {mid} — re-syncing", 'INFO')
+    ok = await _sync_ticked_message(message, admin, is_edit=True)
+    if not ok:
+        _release(mid)
+
+
+async def _admin_who_ticked(message):
+    """Return the admin User who reacted ✅ to this message, or None."""
+    for reaction in message.reactions:
+        if str(reaction.emoji) != '✅':
+            continue
+        try:
+            async for user in reaction.users():
+                if user.id in ADMIN_USER_IDS:
+                    return user
+        except Exception as e:
+            log(f"Could not read reaction users on {message.id}: {e}", 'WARNING')
+    return None
+
+
+async def reaction_safety_sweep():
+    """
+    Backstop for the live ✅ event, and the retry path for failed syncs.
+
+    Gateway events can be missed during a reconnect or downtime, and a
+    Firestore write can fail, so this re-checks recent messages once a
+    minute. The old code did this every 5 seconds, which was the source of
+    the request storm that got the account rate-limited.
+    """
+    await client.wait_until_ready()
+
+    channel = None
+    while channel is None and not client.is_closed():
+        channel = client.get_channel(config["channel_id"])
+        if channel is None:
+            # Never return: this coroutine owns the 'reactions' heartbeat, so
+            # giving up here would make the watchdog restart-loop forever.
+            log(f"Channel {config['channel_id']} not in cache yet — retrying in 30s", 'WARNING')
+            beat('reactions')
+            await asyncio.sleep(30)
+
+    log("Reaction safety sweep started (every 60 seconds)", 'INFO')
 
     while not client.is_closed():
         try:
-            # Fetch recent messages (last 50)
-            async for message in channel.history(limit=50):
-                prev = synced_messages.get(message.id)
-                is_edit = prev is not None and prev['content'] != message.content
+            async for message in channel.history(limit=25):
+                # Heartbeat per message: one pass can legitimately take
+                # minutes (Gemini fallback, Firestore retries) and must not
+                # look like a wedged loop to the watchdog.
+                beat('reactions')
 
-                # Skip if already processed — unless the content changed
-                # since we synced it (the doctor edited their attendance)
+                prev    = synced_messages.get(message.id)
+                is_edit = prev is not None and prev['content'] != message.content
                 if message.id in processed_messages and not is_edit:
                     continue
 
-                # Check if message has ✅ reaction from admin
-                has_admin_checkmark = False
-                reacting_admin = None
-                for reaction in message.reactions:
-                    if str(reaction.emoji) == '✅':
-                        # Check if admin reacted
-                        users = [user async for user in reaction.users()]
-                        for user in users:
-                            if user.id in ADMIN_USER_IDS:
-                                has_admin_checkmark = True
-                                reacting_admin = user
-                                break
-                        if has_admin_checkmark:
-                            break
-
-                if not has_admin_checkmark:
+                admin = await _admin_who_ticked(message)
+                if admin is None:
                     if is_edit:
-                        # The admin's ✅ is gone but the message was edited.
-                        # Leave the stored record alone (only a ✅ authorizes
-                        # a sync), update the fingerprint so this edit isn't
-                        # re-logged every 5 seconds, and un-mark the message
-                        # as processed so a future re-tick is treated as a
-                        # fresh approval of the edited content.
-                        synced_messages[message.id]['content'] = message.content
-                        processed_messages.discard(message.id)
-                        log(f"Message {message.id} was edited but has no admin ✅ — waiting for re-approval", 'WARNING')
+                        entry = synced_messages.get(message.id)
+                        if entry is not None:
+                            entry['content'] = message.content
+                        _release(message.id)
                     continue
 
-                # Mark as processed
+                if not is_edit and not _reserve(message.id):
+                    continue
                 processed_messages.add(message.id)
 
-                if is_edit:
-                    log(f"Detected edit on ticked message {message.id} — re-syncing", 'INFO')
-                else:
-                    log(f"Detected ✅ reaction on message {message.id}", 'INFO')
-
-                # Admin approved — clear the audit's ❌ flag if present
+                log(f"Safety sweep picked up message {message.id} "
+                    f"({'edit' if is_edit else 'missed ✅ or retry'})", 'INFO')
                 try:
                     await message.remove_reaction(CROSS_EMOJI, client.user)
                 except Exception:
                     pass
+                ok = await _sync_ticked_message(message, admin, is_edit=is_edit)
+                if not ok:
+                    _release(message.id)
 
-                await _sync_ticked_message(message, reacting_admin, is_edit=is_edit)
-
-            # Clean up old processed messages (keep last 100)
-            if len(processed_messages) > 100:
-                processed_messages.clear()
-            # Bound the edit-tracking map: keep only the newest ~200 entries
-            # (anything older has scrolled far out of the 50-message window)
+            # Bound both caches WITHOUT wiping them. The old code called
+            # processed_messages.clear(), which made every message look new
+            # again and triggered a burst of redundant reaction lookups.
+            # IDs are snowflakes, so sorted() is oldest-first.
+            if len(processed_messages) > 400:
+                for mid in sorted(processed_messages)[:-200]:
+                    processed_messages.discard(mid)
             if len(synced_messages) > 200:
                 for mid in sorted(synced_messages)[:-200]:
                     del synced_messages[mid]
 
-        except Exception as e:
-            log(f"Error in polling loop: {e}", 'ERROR')
+            beat('reactions')
 
-        # Wait 5 seconds before next check
-        await asyncio.sleep(5)
+        except Exception as e:
+            log(f"Error in safety sweep: {e}", 'ERROR')
+            beat('reactions')
+
+        await asyncio.sleep(60)
 
 PORTAL_URL = "https://legendary-bavarois-b61429.netlify.app/login"
 
@@ -715,9 +1023,12 @@ async def check_welcome_dms_loop():
     log("Welcome DM loop started (checking every 30 seconds)", 'INFO')
     while not client.is_closed():
         try:
-            loop = asyncio.get_event_loop()
-            pending = await loop.run_in_executor(None, get_pending_welcome_dms)
+            pending = await run_blocking(get_pending_welcome_dms, label='get_pending_welcome_dms')
             for doctor in pending:
+                # Beat per doctor: a backlog of DMs under rate-limiting can
+                # take far longer than one loop interval, and that is healthy
+                # work, not a stall.
+                beat('welcome_dms')
                 discord_id = doctor['discordId']
                 doc_id     = doctor['doc_id']
                 username   = doctor['username']
@@ -756,14 +1067,22 @@ async def check_welcome_dms_loop():
                     log(f"Failed to DM {discord_id}: {type(e).__name__}: {e}", 'ERROR')
 
                 # Mark in Firestore — one attempt only, no retry
-                await loop.run_in_executor(None, mark_welcome_dm_sent, doc_id, dm_sent)
+                try:
+                    await run_blocking(mark_welcome_dm_sent, doc_id, dm_sent,
+                                       label='mark_welcome_dm_sent')
+                except Exception as e:
+                    log(f"Could not mark welcomeDmSent for {doc_id}: {e}", 'ERROR')
 
                 # If failed, notify only the admin who created this doctor
                 if not dm_sent:
                     log(f"DM failed for {name} — looking up creator admin '{created_by}'", 'WARNING')
-                    creator_did = await loop.run_in_executor(
-                        None, get_admin_discord_id_by_username, created_by
-                    )
+                    try:
+                        creator_did = await run_blocking(
+                            get_admin_discord_id_by_username, created_by,
+                            label='get_admin_discord_id_by_username'
+                        )
+                    except Exception:
+                        creator_did = None
                     if creator_did:
                         try:
                             guild       = client.get_guild(config['guild_id'])
@@ -794,6 +1113,7 @@ async def check_welcome_dms_loop():
                         log(f"Creator admin '{created_by}' has no Discord ID set — cannot notify", 'WARNING')
         except Exception as e:
             log(f"Error in welcome DM loop: {e}", 'ERROR')
+        beat('welcome_dms')
         await asyncio.sleep(30)
 
 async def sync_member_name(member, source='live'):
@@ -802,10 +1122,14 @@ async def sync_member_name(member, source='live'):
     portal_name = format_portal_name(display)
     if not portal_name:
         return None  # nickname not in 'badge | name' format — ignore
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None, update_doctor_name_by_discord_id, str(member.id), portal_name
-    )
+    try:
+        result = await run_blocking(
+            update_doctor_name_by_discord_id, str(member.id), portal_name,
+            label='update_doctor_name_by_discord_id'
+        )
+    except Exception as e:
+        log(f"[{source}] Name sync failed for {member.id}: {e}", 'ERROR')
+        return {'status': 'error', 'reason': str(e)}
     if result.get('status') == 'updated':
         log(f"[{source}] Portal name synced for {member.id}: "
             f"'{result['old']}' -> '{result['new']}'", 'SUCCESS')
@@ -857,10 +1181,15 @@ async def handle_command(message, content):
         log(f"pms!sheet triggered via DM (mode: {mode})", 'INFO')
         await message.channel.send(f"⏳ Generating sheet for **{mode}**... please wait.")
         try:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, sheet_sync.run, use_current)
+            await run_blocking(sheet_sync.run, use_current,
+                               timeout=SHEET_CALL_TIMEOUT, label='sheet_sync.run')
             await message.channel.send(f"✅ Sheet generated successfully for **{mode}**.\nhttps://docs.google.com/spreadsheets/d/{sheet_sync.SHEET_ID}")
             log("Sheet generation completed via DM command", 'SUCCESS')
+        except asyncio.TimeoutError:
+            await message.channel.send("❌ Sheet generation timed out. Try again, or check the console for errors.")
+        except sheet_sync.SheetSyncError as e:
+            await message.channel.send(f"❌ Sheet generation failed: `{e}`")
+            log(f"Sheet generation failed: {e}", 'ERROR')
         except Exception as e:
             await message.channel.send(f"❌ Sheet generation failed: `{e}`")
             log(f"Sheet generation failed: {e}", 'ERROR')
@@ -929,8 +1258,7 @@ async def handle_command(message, content):
         log("pms!syncnames triggered via DM", 'INFO')
         await message.channel.send("⏳ Re-syncing portal names from current Discord nicknames... please wait.")
         try:
-            loop   = asyncio.get_event_loop()
-            linked = await loop.run_in_executor(None, get_linked_doctors)
+            linked = await run_blocking(get_linked_doctors, label='get_linked_doctors')
             guild  = client.get_guild(config['guild_id'])
             if not guild:
                 await message.channel.send("❌ Could not access the guild.")
@@ -953,8 +1281,9 @@ async def handle_command(message, content):
                 if not portal_name:
                     skipped += 1
                     continue
-                result = await loop.run_in_executor(
-                    None, update_doctor_name_by_discord_id, did, portal_name
+                result = await run_blocking(
+                    update_doctor_name_by_discord_id, did, portal_name,
+                    label='update_doctor_name_by_discord_id'
                 )
                 status = result.get('status')
                 if status == 'updated':

@@ -75,6 +75,18 @@ def load_firebase_config():
 FIREBASE_CONFIG = load_firebase_config()
 _db = None
 
+# Every Firestore call is given an explicit deadline. Without one, a stale gRPC
+# channel blocks its worker thread forever; once enough threads are stuck the
+# bot's loops stop running entirely and only a restart recovers it. This
+# timeout is the single most important part of that fix.
+#
+# Note there is deliberately no "reconnect" helper here: firebase_admin caches
+# the Client (and its gRPC channel) inside the App, so dropping a module-level
+# reference does not force a new connection. Recovery from a truly dead channel
+# is handled by the selfbot's watchdog restarting the process.
+FS_TIMEOUT = 20.0
+
+
 def get_firestore_db():
     """Initialize Firebase Admin SDK (requires service account key)"""
     global _db
@@ -113,11 +125,11 @@ def get_doctor_by_discord_id(discord_id):
     
     try:
         # Query doctors collection for matching discordId
-        docs = db.collection('doctors').where('discordId', '==', discord_id).limit(1).stream()
-        
+        docs = db.collection('doctors').where('discordId', '==', discord_id).limit(1).stream(timeout=FS_TIMEOUT)
+
         for doc in docs:
             return doc.id
-        
+
         return None
     except Exception as e:
         log(f"Error querying doctors: {e}", 'ERROR')
@@ -145,11 +157,11 @@ def add_attendance(doctor_id, date_key, hours, minutes):
         }
         
         # Write to Firestore
-        db.collection('attendance').document(doc_id).set(data)
-        
+        db.collection('attendance').document(doc_id).set(data, timeout=FS_TIMEOUT)
+
         log(f"Synced to Firebase: {doc_id} ({hours}h {minutes}m)", 'SUCCESS')
         return True
-            
+
     except Exception as e:
         log(f"Error syncing attendance: {e}", 'ERROR')
         return False
@@ -169,7 +181,7 @@ def delete_attendance(discord_user_id, date_key):
         log(f"No doctor found with Discord ID: {discord_user_id}", 'WARNING')
         return False
     try:
-        db.collection('attendance').document(f"{doctor_id}_{date_key}").delete()
+        db.collection('attendance').document(f"{doctor_id}_{date_key}").delete(timeout=FS_TIMEOUT)
         log(f"Deleted attendance {doctor_id}_{date_key} (message edit moved it)", 'SUCCESS')
         return True
     except Exception as e:
@@ -204,7 +216,7 @@ def get_pending_welcome_dms():
         log("Firebase not available - cannot query pending DMs", 'ERROR')
         return []
     try:
-        docs = db.collection('doctors').where('welcomeDmSent', '==', False).stream()
+        docs = db.collection('doctors').where('welcomeDmSent', '==', False).stream(timeout=FS_TIMEOUT)
         pending = []
         for doc in docs:
             d = doc.to_dict()
@@ -232,7 +244,7 @@ def mark_welcome_dm_sent(doc_id, success=True):
     try:
         db.collection('doctors').document(doc_id).update({
             'welcomeDmSent': True if success else 'failed'
-        })
+        }, timeout=FS_TIMEOUT)
     except Exception as e:
         log(f"Error marking welcomeDmSent for {doc_id}: {e}", 'ERROR')
 
@@ -250,7 +262,7 @@ def update_doctor_name_by_discord_id(discord_id, new_name):
         return {'status': 'error', 'reason': 'firebase unavailable'}
     try:
         docs = list(
-            db.collection('doctors').where('discordId', '==', discord_id).limit(1).stream()
+            db.collection('doctors').where('discordId', '==', discord_id).limit(1).stream(timeout=FS_TIMEOUT)
         )
         if not docs:
             return {'status': 'notfound'}
@@ -258,7 +270,7 @@ def update_doctor_name_by_discord_id(discord_id, new_name):
         current = (doc.to_dict().get('name') or '').strip()
         if current == new_name:
             return {'status': 'unchanged', 'name': current}
-        db.collection('doctors').document(doc.id).update({'name': new_name})
+        db.collection('doctors').document(doc.id).update({'name': new_name}, timeout=FS_TIMEOUT)
         log(f"Doctor name updated: '{current}' -> '{new_name}' (discordId {discord_id})", 'SUCCESS')
         return {'status': 'updated', 'old': current, 'new': new_name}
     except Exception as e:
@@ -282,7 +294,7 @@ def get_bot_admin_ids():
     if not db:
         return None
     try:
-        snap = db.collection('bot_config').document('discord_admins').get()
+        snap = db.collection('bot_config').document('discord_admins').get(timeout=FS_TIMEOUT)
         if not snap.exists:
             return None
         data = snap.to_dict() or {}
@@ -308,13 +320,13 @@ def ensure_bot_admins_seeded(seed_entries):
         return
     try:
         ref  = db.collection('bot_config').document('discord_admins')
-        snap = ref.get()
+        snap = ref.get(timeout=FS_TIMEOUT)
         if snap.exists:
             return
         ref.set({
             'admins':    list(seed_entries),
             'updatedAt': datetime.utcnow().isoformat() + 'Z',
-        })
+        }, timeout=FS_TIMEOUT)
         log(f"Seeded bot_config/discord_admins with {len(seed_entries)} admin(s)", 'SUCCESS')
     except Exception as e:
         log(f"Error seeding bot admins: {e}", 'ERROR')
@@ -330,7 +342,7 @@ def get_linked_doctors():
         return []
     try:
         out = []
-        for doc in db.collection('doctors').stream():
+        for doc in db.collection('doctors').stream(timeout=FS_TIMEOUT):
             d   = doc.to_dict()
             did = (d.get('discordId') or '').strip()
             if did:
@@ -352,7 +364,7 @@ def get_admin_discord_id_by_username(username):
     if not db:
         return None
     try:
-        docs = db.collection('admins').where('username', '==', username).limit(1).stream()
+        docs = db.collection('admins').where('username', '==', username).limit(1).stream(timeout=FS_TIMEOUT)
         for doc in docs:
             did = doc.to_dict().get('discordId', '').strip()
             return did if did else None

@@ -70,7 +70,7 @@ def _flush_loop():
             db.collection('bot_console').document('live').set({
                 'lines':     lines,
                 'updatedAt': datetime.utcnow().isoformat() + 'Z',
-            })
+            }, timeout=15.0)
         except Exception:
             # Never let console mirroring break the bot. Mark dirty so the
             # next tick retries.
