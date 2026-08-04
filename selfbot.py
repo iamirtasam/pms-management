@@ -544,17 +544,21 @@ async def on_ready():
                                 'date_key': dk,
                             }
 
-                # Suppress old messages so startup doesn't re-walk 200 messages
-                # of history — but deliberately leave every ticked attendance
-                # UNCLAIMED. In-memory state says nothing about whether the
-                # portal actually holds a record: a ✅ added while the bot was
-                # down, or a sync that failed just before the last restart,
-                # looks identical to a completed one. The sweep re-confirms the
-                # ~25 most recent, and add_attendance() writes to the fixed doc
-                # ID doctorId_dateKey with .set(), so re-confirming an already
-                # synced record overwrites it with the same values. Losing an
-                # approved shift is unrecoverable; a redundant write is free.
-                if not (ticked and entry):
+                # Claim ONLY non-attendance chatter. Every attendance message
+                # is left unclaimed, whether or not it is currently ticked.
+                #
+                # Claiming an un-ticked attendance was a real bug: the claim is
+                # what both the live event and the sweep use to mean "already
+                # handled", so a message that was merely *awaiting* approval at
+                # startup could never be approved afterwards — the ✅ arrived,
+                # _reserve() saw the claim and returned silently, and the sweep
+                # skipped it for the same reason. Approvals only ever worked
+                # for messages posted after the last restart.
+                #
+                # Leaving them unclaimed is cheap: the sweep's reaction lookup
+                # only issues an HTTP call for messages that actually carry
+                # reactions, and nothing is written without an admin ✅.
+                if not entry:
                     processed_messages.add(message.id)
 
             log(f"Loaded {len(entries)} users from history", 'SUCCESS')
@@ -927,6 +931,11 @@ async def on_raw_reaction_add(payload):
         return
     # Claim before awaiting, or the sweep may grab it during fetch_message.
     if not _reserve(payload.message_id):
+        # Normally this means the sweep is mid-sync on the same message, which
+        # is fine. But a stale claim silently swallows a real approval, so say
+        # so rather than returning without a trace.
+        log(f"✅ on {payload.message_id} skipped — already claimed "
+            f"(in flight, or synced earlier this run)", 'INFO')
         return
 
     # Anything short of a completed sync — including an early return or an
