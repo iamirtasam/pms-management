@@ -12,6 +12,7 @@ from shared import entries, LOG_FILE
 from firebase_sync import sync_attendance, delete_attendance, get_pending_welcome_dms, mark_welcome_dm_sent, get_admin_discord_id_by_username, update_doctor_name_by_discord_id, get_linked_doctors, get_bot_admin_ids, ensure_bot_admins_seeded
 import sheet_sync
 import attendance_audit
+import console_log
 
 # Pakistan Standard Time is UTC+5 (no DST). Daily audit runs at 1 AM PKT.
 PKT_OFFSET = timedelta(hours=5)
@@ -19,7 +20,28 @@ AUDIT_HOUR = 1
 
 # Reaction the bot adds to a faulty attendance (removed on admin ✅ or pms!cross).
 CROSS_EMOJI = '❌'
-import console_log
+
+# The approval emoji, and a tolerant test for it.
+#
+# Discord sends ✅ over the gateway as a bare U+2705, but some clients (and
+# some reaction payloads) include the U+FE0F variation selector, giving
+# "✅️". A plain `str(emoji) == '✅'` fails on that form, and it fails
+# SILENTLY in every place it is used — the live event, the sweep's admin
+# lookup, and the startup scan all just skip the message with no log line.
+# Normalising strips the variation selector and any zero-width joiner so all
+# spellings of the same emoji compare equal.
+CHECK_EMOJI = '✅'
+
+
+def is_check(emoji):
+    """True if this reaction emoji is ✅, in any of its Unicode spellings."""
+    return str(emoji).replace('️', '').replace('‍', '').strip() == CHECK_EMOJI
+
+
+def has_check(message):
+    """True if the message carries a ✅ reaction from anyone."""
+    return any(is_check(r.emoji) for r in message.reactions)
+
 
 try:
     from google import genai
@@ -502,7 +524,7 @@ async def on_ready():
         try:
             async for message in channel.history(limit=200):
                 entry = parse_message(message.content)
-                ticked = any(str(r.emoji) == '✅' for r in message.reactions)
+                ticked = has_check(message)
                 if entry:
                     uid = entry["user_id"]
                     if entry not in entries.get(uid, []):
@@ -605,7 +627,7 @@ async def run_attendance_audit():
         content = message.content or ''
         if not attendance_audit.looks_like_attendance(content):
             continue
-        if any(str(r.emoji) == '✅' for r in message.reactions):
+        if has_check(message):
             continue  # already handled/approved
 
         # Membership is by the day the message was POSTED (PKT), not the written
@@ -855,6 +877,32 @@ def _release(message_id):
     processed_messages.discard(message_id)
 
 
+# Message IDs already reported as ticked-by-a-non-admin, so the 60s sweep
+# doesn't repeat the same warning forever.
+_warned_unauthorised = set()
+
+
+def _warn_unauthorised_tick(message_id, user_id=None):
+    """
+    Say out loud that a ✅ was ignored because it came from someone who is not
+    on the bot-admin list.
+
+    This used to be a silent `return`, which is the worst possible behaviour:
+    a stale admin list looks exactly like a dead bot — no reaction, no error,
+    nothing in the log to explain it. The admin list is panel-managed, so it
+    changes without any code change and this WILL happen again.
+    """
+    if message_id in _warned_unauthorised:
+        return
+    if len(_warned_unauthorised) > 300:
+        _warned_unauthorised.clear()
+    _warned_unauthorised.add(message_id)
+    who = f"user {user_id}" if user_id else "a non-admin"
+    log(f"✅ on message {message_id} IGNORED — {who} is not a bot admin. "
+        f"Current bot admins: {sorted(ADMIN_USER_IDS)}. "
+        f"Add them in the admin panel if this tick should have counted.", 'WARNING')
+
+
 @client.event
 async def on_raw_reaction_add(payload):
     """
@@ -867,9 +915,15 @@ async def on_raw_reaction_add(payload):
     """
     if payload.channel_id != config["channel_id"]:
         return
-    if str(payload.emoji) != '✅':
+    # Unconditional trace BEFORE any filtering. When a tick produces no
+    # response, this is the one line that says whether the gateway event
+    # even arrived — which separates "Discord never told us" from "we told
+    # ourselves to ignore it". Every filter below is otherwise silent.
+    log(f"Raw reaction: {payload.emoji} by {payload.user_id} on {payload.message_id}", 'INFO')
+    if not is_check(payload.emoji):
         return
     if payload.user_id not in ADMIN_USER_IDS:
+        _warn_unauthorised_tick(payload.message_id, payload.user_id)
         return
     # Claim before awaiting, or the sweep may grab it during fetch_message.
     if not _reserve(payload.message_id):
@@ -957,7 +1011,7 @@ async def on_raw_message_edit(payload):
 async def _admin_who_ticked(message):
     """Return the admin User who reacted ✅ to this message, or None."""
     for reaction in message.reactions:
-        if str(reaction.emoji) != '✅':
+        if not is_check(reaction.emoji):
             continue
         try:
             async for user in reaction.users():
@@ -966,6 +1020,10 @@ async def _admin_who_ticked(message):
         except Exception as e:
             log(f"Could not read reaction users on {message.id}: {e}", 'WARNING')
     return None
+
+
+SWEEP_WINDOW   = 50    # messages re-checked per pass
+SWEEP_INTERVAL = 60    # seconds between passes
 
 
 async def reaction_safety_sweep():
@@ -989,11 +1047,19 @@ async def reaction_safety_sweep():
             beat('reactions')
             await asyncio.sleep(30)
 
-    log("Reaction safety sweep started (every 60 seconds)", 'INFO')
+    log(f"Reaction safety sweep started (newest {SWEEP_WINDOW} messages "
+        f"every {SWEEP_INTERVAL}s)", 'INFO')
 
+    passes = 0
     while not client.is_closed():
         try:
-            async for message in channel.history(limit=25):
+            # 50, matching the old poll's window: admins tick in batches and
+            # often work backwards through the day, so a 25-message window
+            # could leave an older approval permanently outside the backstop.
+            # Cost is near zero in steady state — the expensive reaction
+            # lookup only runs for messages that are still unclaimed, which
+            # after the first pass means only genuinely new ticks.
+            async for message in channel.history(limit=SWEEP_WINDOW):
                 # Heartbeat per message: one pass can legitimately take
                 # minutes (Gemini fallback, Firestore retries) and must not
                 # look like a wedged loop to the watchdog.
@@ -1006,6 +1072,8 @@ async def reaction_safety_sweep():
 
                 admin = await _admin_who_ticked(message)
                 if admin is None:
+                    if has_check(message):
+                        _warn_unauthorised_tick(message.id)
                     if is_edit:
                         entry = synced_messages.get(message.id)
                         if entry is not None:
@@ -1039,11 +1107,20 @@ async def reaction_safety_sweep():
 
             beat('reactions')
 
+            # Periodic proof-of-life. Without this the sweep is completely
+            # invisible when it has nothing to do, so "no output" is
+            # ambiguous between "healthy and idle" and "wedged" — which is
+            # exactly the ambiguity that made this bug hard to pin down.
+            passes += 1
+            if passes % 10 == 0:
+                log(f"Sweep alive — {passes} passes, {len(processed_messages)} "
+                    f"messages tracked, admins {sorted(ADMIN_USER_IDS)}", 'INFO')
+
         except Exception as e:
             log(f"Error in safety sweep: {e}", 'ERROR')
             beat('reactions')
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(SWEEP_INTERVAL)
 
 PORTAL_URL = "https://legendary-bavarois-b61429.netlify.app/login"
 
@@ -1224,6 +1301,50 @@ async def handle_command(message, content):
             await message.channel.send(f"❌ Sheet generation failed: `{e}`")
             log(f"Sheet generation failed: {e}", 'ERROR')
 
+    # ── pms!diag ──────────────────────────────────────────────────
+    elif cmd == 'diag':
+        # Reports live state without touching Firestore, so it still answers
+        # when the thread pool is wedged — that is the whole point of it.
+        log("pms!diag triggered via DM", 'INFO')
+        chan = client.get_channel(config["channel_id"])
+        lines = [
+            "**Selfbot diagnostics**",
+            f"Channel in cache: {'yes' if chan else 'NO — this breaks the sweep'}",
+            f"Bot admins ({len(ADMIN_USER_IDS)}): {sorted(ADMIN_USER_IDS)}",
+            f"You are: {message.author.id} "
+            f"({'an admin' if message.author.id in ADMIN_USER_IDS else 'NOT an admin'})",
+            f"Claimed messages: {len(processed_messages)} | "
+            f"fingerprints: {len(synced_messages)}",
+            f"Consecutive blocking-call timeouts: {_consecutive_timeouts}"
+            f"/{MAX_CONSECUTIVE_TIMEOUTS}",
+            f"Loops started: {_loops_started}",
+        ]
+        now = time.monotonic()
+        with _HEARTBEAT_LOCK:
+            snap = dict(_heartbeats)
+        for name, limit in WATCHDOG_LIMITS.items():
+            last = snap.get(name)
+            lines.append(f"  {name}: " + ("never ticked" if last is None
+                         else f"{int(now - last)}s ago (limit {limit}s)"))
+
+        if chan:
+            try:
+                found = []
+                async for m in chan.history(limit=10):
+                    if not m.reactions:
+                        continue
+                    found.append(f"  {m.id}: " + ", ".join(
+                        f"{r.emoji!s}(x{r.count}){'←check' if is_check(r.emoji) else ''}"
+                        for r in m.reactions))
+                lines.append("Reactions on the newest 10 messages:")
+                lines += found or ["  (none)"]
+            except Exception as e:
+                lines.append(f"Could not read history: {e}")
+
+        text = "\n".join(lines)
+        for i in range(0, len(text), 1900):
+            await message.channel.send(text[i:i+1900])
+
     # ── pms!logs ──────────────────────────────────────────────────
     elif cmd == 'logs':
         log("pms!logs triggered via DM", 'INFO')
@@ -1352,6 +1473,7 @@ async def handle_command(message, content):
             "`pms!cross <message_id>` — remove the ❌ the bot put on an attendance\n"
             "`pms!syncnames` — re-sync all portal names from current Discord nicknames\n"
             "`pms!restart` — restart the selfbot process\n"
+            "`pms!diag` — live health check (admins, heartbeats, recent reactions)\n"
             "`pms!help` — show this message"
         )
         await message.channel.send(help_text)
