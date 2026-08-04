@@ -229,8 +229,28 @@ def beat(name):
         _heartbeats[name] = time.monotonic()
 
 
+async def _hard_restart(reason):
+    """
+    Restart the process from scratch after an unrecoverable wedge.
+
+    os.execv is the same mechanism pms!restart uses — the one already proven
+    to bring this bot back to life — and it replaces the process image, so the
+    stuck pool threads that caused the wedge are gone rather than merely
+    abandoned. It also means recovery does not depend on the host's restart
+    policy. os._exit is the fallback: never sys.exit, because a wedged
+    non-daemon pool thread would block interpreter shutdown forever.
+    """
+    log(f"WATCHDOG: {reason} — restarting process", 'ERROR')
+    await asyncio.sleep(3)   # let the console mirror flush to Firestore
+    try:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        log(f"execv failed ({e}) — exiting for the supervisor to restart", 'ERROR')
+        os._exit(1)
+
+
 async def watchdog_loop():
-    """Exit the process if the bot is unhealthy in a way it can't self-repair."""
+    """Restart the process if the bot is unhealthy in a way it can't self-repair."""
     await client.wait_until_ready()
     for n in WATCHDOG_LIMITS:
         beat(n)
@@ -239,10 +259,8 @@ async def watchdog_loop():
         await asyncio.sleep(60)
 
         if _consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
-            log(f"WATCHDOG: {_consecutive_timeouts} consecutive blocking-call "
-                f"timeouts — Firestore is unreachable, restarting process", 'ERROR')
-            await asyncio.sleep(3)   # let the console mirror flush
-            os._exit(1)
+            await _hard_restart(f"{_consecutive_timeouts} consecutive blocking-call "
+                                f"timeouts — Firestore is unreachable")
 
         now = time.monotonic()
         with _HEARTBEAT_LOCK:
@@ -253,13 +271,8 @@ async def watchdog_loop():
                 continue
             stalled = now - last
             if stalled > limit:
-                log(f"WATCHDOG: '{name}' has not ticked for {int(stalled)}s "
-                    f"(limit {limit}s) — restarting process", 'ERROR')
-                # Give the console mirror a moment to flush, then bail out.
-                # os._exit, not sys.exit: a wedged pool thread is non-daemon
-                # work that would otherwise block interpreter shutdown.
-                await asyncio.sleep(3)
-                os._exit(1)
+                await _hard_restart(f"'{name}' has not ticked for {int(stalled)}s "
+                                    f"(limit {limit}s)")
 
 
 client = discord.Client()
@@ -509,11 +522,17 @@ async def on_ready():
                                 'date_key': dk,
                             }
 
-                # Suppress old messages so startup doesn't re-sync history.
-                # A ticked attendance WITHOUT a fingerprint is deliberately left
-                # unclaimed: that is either a ✅ applied while the bot was down
-                # or a previous sync that failed, and the sweep must retry it.
-                if not (ticked and entry and message.id not in synced_messages):
+                # Suppress old messages so startup doesn't re-walk 200 messages
+                # of history — but deliberately leave every ticked attendance
+                # UNCLAIMED. In-memory state says nothing about whether the
+                # portal actually holds a record: a ✅ added while the bot was
+                # down, or a sync that failed just before the last restart,
+                # looks identical to a completed one. The sweep re-confirms the
+                # ~25 most recent, and add_attendance() writes to the fixed doc
+                # ID doctorId_dateKey with .set(), so re-confirming an already
+                # synced record overwrites it with the same values. Losing an
+                # approved shift is unrecoverable; a redundant write is free.
+                if not (ticked and entry):
                     processed_messages.add(message.id)
 
             log(f"Loaded {len(entries)} users from history", 'SUCCESS')
@@ -713,6 +732,16 @@ async def _dm_admin(reacting_admin, text):
     except Exception as dm_err:
         log(f"Failed to send DM to admin: {dm_err}", 'WARNING')
 
+# Outcome of _sync_ticked_message. The distinction between REJECTED and RETRY
+# matters a lot: treating a permanently unusable message as retryable makes the
+# safety sweep re-parse it every 60 seconds forever — burning a Gemini call and
+# re-DMing the admin on every pass — while treating a transient Firestore
+# failure as permanent silently loses an approved shift.
+SYNC_OK       = 'ok'        # the portal holds the record
+SYNC_REJECTED = 'rejected'  # message is unusable as-is; a human must act
+SYNC_RETRY    = 'retry'     # transient failure; un-claim so the sweep retries
+
+
 async def _sync_ticked_message(message, reacting_admin, is_edit=False):
     """
     Parse a ✅-approved attendance message and sync it to the portal.
@@ -721,9 +750,8 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
     edits are detected; if an edit moved the attendance to a different
     date, the record at the old date is deleted first.
 
-    Returns True only when the portal actually holds the record. Any other
-    result means the caller must NOT treat the message as handled — see
-    _release() at the call sites, which lets the safety sweep retry.
+    Returns SYNC_OK / SYNC_REJECTED / SYNC_RETRY. Only SYNC_RETRY means the
+    caller must _release() the claim so the sweep can try again.
     """
     prev = synced_messages.get(message.id)
     what = "edited attendance" if is_edit else "attendance"
@@ -732,7 +760,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
     entry = parse_message(message.content)
     if not entry:
         log(f"Could not parse {what} message", 'WARNING')
-        return False
+        return SYNC_REJECTED
 
     discord_user_id = entry["user_id"]
     total_hours_str = entry["total_hours"]
@@ -740,7 +768,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
 
     if not total_hours_str or not date_str:
         log(f"Missing hours or date in {what} message", 'WARNING')
-        return False
+        return SYNC_REJECTED
 
     # Parse hours and minutes
     hours, minutes = parse_hours_minutes(total_hours_str)
@@ -756,7 +784,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
                 f"⚠️ Could not auto-parse attendance hours for user <@{discord_user_id}> on {date_str}.\n"
                 "Please add their attendance manually in the admin panel."
             )
-            return False
+            return SYNC_REJECTED
 
     # Parse date to YYYY-MM-DD, sanity-checked against the PKT day the
     # message was posted (catches day/month swaps and typo'd dates
@@ -771,7 +799,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
             f"`{date_str}` doesn't match the day it was posted ({posted_pkt_date.strftime('%m/%d/%Y')} PKT).\n"
             "It was NOT saved — please verify and add it manually in the admin panel."
         )
-        return False
+        return SYNC_REJECTED
 
     # If this message was synced before and the date (or tagged user) has
     # changed since, remove the record stored from the old version so no
@@ -785,7 +813,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
             # Leave the message unhandled so the sweep retries; writing the new
             # record now would leave a duplicate on the old date.
             log(f"Could not delete stale record at {prev['date_key']}: {e} — will retry", 'WARNING')
-            return False
+            return SYNC_RETRY
 
     # Sync to Firebase (doc ID is doctorId_dateKey, so this overwrites)
     ok = await sync_attendance_to_firebase(discord_user_id, date_key, hours, minutes)
@@ -793,7 +821,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
         # Firestore refused or timed out. Do NOT fingerprint it — the sweep
         # must be able to pick this up again, or the shift is never recorded.
         log(f"Sync FAILED for <@{discord_user_id}> on {date_key} — will retry", 'ERROR')
-        return False
+        return SYNC_RETRY
 
     log(f"Attendance {'updated (message edit)' if is_edit else 'approved'} - "
         f"User: {discord_user_id}, Date: {date_str} → {date_key}, Duration: {hours}h {minutes}m", 'SUCCESS')
@@ -804,7 +832,7 @@ async def _sync_ticked_message(message, reacting_admin, is_edit=False):
         'user_id':  discord_user_id,
         'date_key': date_key,
     }
-    return True
+    return SYNC_OK
 
 def _reserve(message_id):
     """
@@ -847,7 +875,10 @@ async def on_raw_reaction_add(payload):
     if not _reserve(payload.message_id):
         return
 
-    ok = False
+    # Anything short of a completed sync — including an early return or an
+    # unexpected exception below — must un-claim the message so the sweep
+    # retries it. Starting at SYNC_RETRY makes that the default.
+    outcome = SYNC_RETRY
     try:
         channel = client.get_channel(config["channel_id"])
         if channel is None:
@@ -863,11 +894,12 @@ async def on_raw_reaction_add(payload):
             await message.remove_reaction(CROSS_EMOJI, client.user)
         except Exception:
             pass
-        ok = await _sync_ticked_message(message, reacting_admin, is_edit=False)
+        outcome = await _sync_ticked_message(message, reacting_admin, is_edit=False)
     except Exception as e:
         log(f"Error handling ✅ event for {payload.message_id}: {e}", 'ERROR')
+        outcome = SYNC_RETRY
     finally:
-        if not ok:
+        if outcome == SYNC_RETRY:
             _release(payload.message_id)
 
 
@@ -918,8 +950,7 @@ async def on_raw_message_edit(payload):
 
     processed_messages.add(mid)
     log(f"Detected edit on ticked message {mid} — re-syncing", 'INFO')
-    ok = await _sync_ticked_message(message, admin, is_edit=True)
-    if not ok:
+    if await _sync_ticked_message(message, admin, is_edit=True) == SYNC_RETRY:
         _release(mid)
 
 
@@ -992,8 +1023,7 @@ async def reaction_safety_sweep():
                     await message.remove_reaction(CROSS_EMOJI, client.user)
                 except Exception:
                     pass
-                ok = await _sync_ticked_message(message, admin, is_edit=is_edit)
-                if not ok:
+                if await _sync_ticked_message(message, admin, is_edit=is_edit) == SYNC_RETRY:
                     _release(message.id)
 
             # Bound both caches WITHOUT wiping them. The old code called
