@@ -2,7 +2,7 @@
 
 <img src="https://img.shields.io/badge/Status-Active-0071e3?style=flat-square" alt="Status">
 <img src="https://img.shields.io/badge/Stack-Firebase_·_Flask_·_discord.py--self-1d1d1f?style=flat-square" alt="Stack">
-<img src="https://img.shields.io/badge/License-Private-707070?style=flat-square" alt="License">
+<img src="https://img.shields.io/badge/License-MIT-0071e3?style=flat-square" alt="License">
 
 # EMS Portal + PMS Selfbot
 
@@ -161,5 +161,9 @@ Designed for Railway-style hosting: `selfbot/Procfile` launches `python main.py`
 
 ## Credits
 
-- **Engineering & product design** — [**Irtasam**](https://github.com/iamirtasam): the architecture, workflows, data model, and every design decision originated here. The problem-solving and thinking behind how this system works are entirely his.
-- **Code production** — built with AI assistance under Irtasam's direction and review.
+- **Engineering & product design** — Me: the architecture, workflows, data model, and every design decision originated from me. The problem-solving and thinking behind how this system works are entirely mine.
+- **Code production** — built with AI assistance under my direction and review.
+
+## License
+
+Released under the [MIT License](LICENSE) — free to use, modify, and distribute with attribution.
