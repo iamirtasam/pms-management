@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── DEFAULT: deny everything ─────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── config ───────────────────────────────────────────────────
+    // config/admin is read by the browser during login to verify
+    // master admin credentials — must be readable.
+    // config/settings is read for week start day.
+    // No browser writes allowed on any config doc.
+    match /config/{docId} {
+      allow read: if docId == 'admin' || docId == 'settings';
+      allow write: if false;
+    }
+
+    // ── bot_config ───────────────────────────────────────────────
+    // Managed bot-admin Discord IDs (bot_config/discord_admins).
+    // Read by the browser admin panel; the selfbot reads via Admin SDK.
+    // Browser writes are gated to the master admin client-side.
+    match /bot_config/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── doctors ───────────────────────────────────────────────────
+    match /doctors/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['name','username','password','disabled','createdAt']);
+      allow update: if request.resource.data.keys().hasAny(['name','username','password','disabled','createdAt']);
+      allow delete: if true;
+    }
+
+    // ── admins ────────────────────────────────────────────────────
+    match /admins/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['name','username','password','disabled','createdAt']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ── attendance ────────────────────────────────────────────────
+    match /attendance/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── bonuses ───────────────────────────────────────────────────
+    match /bonuses/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['doctorId','category','amount','status','createdAt']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ── strikes ───────────────────────────────────────────────────
+    match /strikes/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['doctorId','reason','createdAt']);
+      allow delete: if true;
+      allow update: if false;
+    }
+
+    // ── logs ─────────────────────────────────────────────────────
+    match /logs/{docId} {
+      allow read: if true;
+      allow create: if true;
+      allow delete: if true;
+      allow update: if false;
+    }
+
+    // ── bot_console ──────────────────────────────────────────────
+    // Realtime bot console mirror. Browser reads only; only the selfbot
+    // (via Admin SDK, which bypasses these rules) writes here.
+    match /bot_console/{docId} {
+      allow read:  if true;
+      allow write: if false;
+    }
+
+    // ── rules_categories ─────────────────────────────────────────
+    match /rules_categories/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['name','order','createdAt']);
+      allow delete: if true;
+      allow update: if true;
+    }
+
+    // ── rules_items ───────────────────────────────────────────────
+    match /rules_items/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['categoryId','text','order','createdAt']);
+      allow delete: if true;
+      allow update: if true;
+    }
+
+    // ── training_categories ───────────────────────────────────────
+    match /training_categories/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['name','order','createdAt']);
+      allow delete: if true;
+      allow update: if true;
+    }
+
+    // ── training_items ────────────────────────────────────────────
+    match /training_items/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['categoryId','text','order','createdAt']);
+      allow delete: if true;
+      allow update: if true;
+    }
+  }
+}

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMS Portal</title>
+<link rel="stylesheet" href="styles.css">
+<script>(function(){var t=localStorage.getItem('pms-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+
+<nav class="navbar">
+  <img class="navbar-logo" src="https://cdn.discordapp.com/attachments/1066446515062702140/1476648699559022914/transparentlogo.png?ex=69b5aa44&is=69b458c4&hm=c30e9123921f3b3609d5998d1feaf8daeafb5488b092ec5877bb35ef064ecf08&" alt="EMS Logo" onerror="this.style.display='none'">
+  <div class="navbar-brand">
+    <div class="navbar-title">EMS Portal</div>
+  </div>
+  <div class="navbar-right">
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div style="min-height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center;padding:40px 24px;">
+  <div style="text-align:center;max-width:600px;width:100%;">
+    <div class="eyebrow" style="margin-bottom:32px;">Emergency Medical Services</div>
+    <h1 style="font-family:var(--font-display);font-size:80px;font-weight:700;color:var(--color-ink);letter-spacing:-1.5px;line-height:1.05;margin-bottom:24px;">
+      EMS Portal
+    </h1>
+    <p style="color:var(--color-graphite);font-size:20px;font-weight:300;line-height:1.5;letter-spacing:-0.2px;max-width:520px;margin:0 auto 40px;">
+      Staff management and operations platform for authorized personnel only.
+    </p>
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:24px;">
+      <a href="login.html" class="btn btn-primary btn-lg" style="text-decoration:none;min-width:160px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Staff Login
+      </a>
+      <a href="login.html?role=admin" class="btn btn-outline btn-lg" style="text-decoration:none;min-width:160px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Admin Login
+      </a>
+    </div>
+    <div style="font-size:12px;color:var(--color-graphite);letter-spacing:-0.1px;">
+      Authorized personnel only. Unauthorized access is prohibited.
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+window.applyTheme = function(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('pms-theme', t);
+  document.querySelectorAll('.icon-sun').forEach(el => el.style.display = t === 'dark' ? 'none' : 'block');
+  document.querySelectorAll('.icon-moon').forEach(el => el.style.display = t === 'dark' ? 'block' : 'none');
+};
+window.toggleTheme = function() {
+  window.applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+};
+(function(){ window.applyTheme(localStorage.getItem('pms-theme') || 'dark'); })();
+</script>
+<script type="module">
+// If already signed in (this tab, or remembered for 10 days), skip the landing
+// page and go straight to the right dashboard.
+import { getSession } from './auth.js';
+const s = getSession();
+if (s) window.location.href = s.role === 'admin' ? 'admin.html' : 'dashboard.html';
+</script>
+</body>
+</html>

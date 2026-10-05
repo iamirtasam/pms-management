@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMS Portal — Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+<script>(function(){var t=localStorage.getItem('pms-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+
+<nav class="navbar">
+  <img class="navbar-logo" src="https://cdn.discordapp.com/attachments/1066446515062702140/1476648699559022914/transparentlogo.png?ex=69b5aa44&is=69b458c4&hm=c30e9123921f3b3609d5998d1feaf8daeafb5488b092ec5877bb35ef064ecf08&" alt="EMS Logo" onerror="this.style.display='none'">
+  <div class="navbar-brand">
+    <div class="navbar-title">EMS Portal</div>
+    <div class="navbar-sub">/ Doctor Dashboard</div>
+  </div>
+  <div class="navbar-right">
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <div class="nav-user">
+      <div class="nav-user-avatar" id="navAvatar">?</div>
+      <div>
+        <div class="nav-user-name" id="navName"><div class="skeleton" style="height:14px;width:90px"></div></div>
+        <div class="nav-user-role">Doctor</div>
+      </div>
+    </div>
+    <button class="btn btn-outline btn-sm" id="switchToAdminBtn" onclick="switchToAdmin()" style="display:none" title="Switch back to your admin account">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>
+      <span class="btn-label">Switch to Admin</span>
+    </button>
+    <button class="btn btn-outline btn-sm" onclick="doLogout()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span class="btn-label">Logout</span>
+    </button>
+  </div>
+</nav>
+
+<div class="page">
+
+  <div class="welcome-bar">
+    <div>
+      <div class="welcome-name" id="welcomeName">Welcome</div>
+      <div class="welcome-role">EMS — Doctor Account</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar">
+    <div class="tab active" onclick="showTab('home')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Home
+    </div>
+    <div class="tab" onclick="showTab('attendance')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Attendance
+    </div>
+    <div class="tab" onclick="showTab('bonuses')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      Bonuses &amp; Strikes
+    </div>
+    <div class="tab" data-tab="rules" onclick="showTab('rules')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Rules
+    </div>
+    <div class="tab" id="trainerTrainingTab" data-tab="training" onclick="showTab('training')" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+      Training
+    </div>
+  </div>
+
+  <!-- HOME -->
+  <div class="view active" id="view-home">
+
+    <!-- Podium: Last Week Top 3 -->
+    <div class="home-section-label">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:7px;color:var(--color-warning)"><path d="M6 9H4a2 2 0 0 1-2-2V5h4"/><path d="M18 9h2a2 2 0 0 0 2-2V5h-4"/><path d="M6 5h12v6a6 6 0 0 1-12 0V5z"/><line x1="12" y1="15" x2="12" y2="19"/><line x1="8" y1="19" x2="16" y2="19"/></svg>
+      Last Week — Top Performers
+    </div>
+    <div class="podium-wrap" id="podiumWrap">
+      <div class="podium-loading">
+        <div class="skeleton" style="height:130px;border-radius:16px;width:100%"></div>
+      </div>
+    </div>
+
+    <!-- Leaderboard toggle + list -->
+    <div class="home-section-label" style="margin-top:32px;display:flex;align-items:center;justify-content:space-between;">
+      <span id="lbTitle" style="display:flex;align-items:center;gap:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-azure)"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
+        <span id="lbTitleText">This Week — Full Rankings</span>
+      </span>
+      <div class="lb-toggle" id="lbToggle">
+        <button class="lb-toggle-btn active" id="lbThisBtn" onclick="switchLeaderboard('this')">This Week</button>
+        <button class="lb-toggle-btn" id="lbLastBtn" onclick="switchLeaderboard('last')">Last Week</button>
+      </div>
+    </div>
+    <div class="card" style="overflow:hidden">
+      <div id="leaderboardList"><div class="hint-box">Loading...</div></div>
+    </div>
+
+    <!-- Team strip -->
+    <div class="home-team-strip" id="homeTeamStrip" style="margin-top:24px;display:none">
+      <div class="home-team-stat">
+        <div class="home-team-num" id="teamTotalHours">—</div>
+        <div class="home-team-lbl">Team Hours This Week</div>
+      </div>
+      <div class="home-team-stat">
+        <div class="home-team-num" id="teamPresentCount">—</div>
+        <div class="home-team-lbl">Present Today</div>
+      </div>
+      <div class="home-team-stat">
+        <div class="home-team-num" id="teamDoctorCount">—</div>
+        <div class="home-team-lbl">Total Doctors</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATTENDANCE -->
+  <div class="view" id="view-attendance">
+    <div class="sec-head"><div class="sec-bar"></div><div class="sec-title">Attendance</div></div>
+    <div class="week-nav">
+      <button class="week-nav-btn" id="weekPrev" onclick="changeWeek(-1)" aria-label="Previous week">&#8249;</button>
+      <div class="week-nav-label" id="weekRangeLabel"><div class="skeleton" style="height:14px;width:200px;margin:0 auto"></div></div>
+      <button class="week-nav-btn" id="weekNext" onclick="changeWeek(1)" aria-label="Next week">&#8250;</button>
+    </div>
+    <div class="skeleton-grid" id="weekGrid">
+      <div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>
+      <div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>
+      <div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>
+      <div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>
+      <div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>
+      <div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>
+      <div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>
+    </div>
+    <div class="stats-row mt-24" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+      <div class="stat-card green"><div class="stat-num" id="attPresent">—</div><div class="stat-lbl">Present</div></div>
+      <div class="stat-card red"><div class="stat-num" id="attAbsent">—</div><div class="stat-lbl">Absent</div></div>
+      <div class="stat-card"><div class="stat-num" id="attLate" style="color:var(--color-warning)">—</div><div class="stat-lbl">Late</div></div>
+      <div class="stat-card"><div class="stat-num" id="attOff">—</div><div class="stat-lbl">Day Off</div></div>
+      <div class="stat-card accent">
+        <div class="stat-num" id="attTotalHours" style="font-size:32px;letter-spacing:-0.6px;">0h 0m</div>
+        <div class="stat-lbl">Total Hours</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BONUSES & STRIKES -->
+  <div class="view" id="view-bonuses">
+    <div class="bonus-total-card">
+      <div>
+        <div class="bonus-total-label">This Week — Total Bonuses</div>
+        <div class="bonus-total-amt" id="weeklyBonusTotal">$0</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;color:var(--color-graphite);letter-spacing:-0.26px;">Pending</div>
+        <div style="font-family:var(--font-display);font-size:32px;font-weight:700;color:var(--color-warning);letter-spacing:-0.5px;line-height:1;margin-top:6px;" id="pendingBonusTotal">$0</div>
+      </div>
+    </div>
+    <div class="form-grid-2" style="display:grid;gap:20px;align-items:start">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-azure)" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Bonuses
+          </div>
+          <div class="card-count" id="bonusCount">0</div>
+        </div>
+        <div class="card-body" id="bonusList"><div class="hint-box">No bonuses recorded yet.</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Strikes
+          </div>
+          <div class="card-count" id="strikeCount">0</div>
+        </div>
+        <div class="card-body" id="strikeList"><div class="hint-box">No strikes on record.</div></div>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- RULES -->
+  <div id="view-rules" class="view">
+    <div class="sec-head">
+      <div class="sec-title">EMS Rules</div>
+    </div>
+    <div id="rulesCategoriesList">
+      <div class="hint-box">Loading rules...</div>
+    </div>
+  </div>
+
+  <!-- TRAINING (trainer only) -->
+  <div id="view-training" class="view">
+    <div class="sec-head">
+      <div class="sec-title">Training Instructions <span class="badge-ro">Read-only</span></div>
+    </div>
+    <div id="trainingCategoriesList">
+      <div class="hint-box">Loading training...</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+
+<script type="module">
+import { requireDoctor, clearSession, showToast, esc, fmtDate, fmtMoney, fsQuery, fsGetAll, writeLog, LOG_ACTIONS, getSwitchAlt, switchAccount } from './auth.js';
+import { COLLECTIONS, getCurrentWeekRange, getWeekDays, dateKey, BONUS_CATEGORIES } from './firebase-config.js';
+
+// ── Theme ──────────────────────────────────────────────────
+window.applyTheme = function(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('pms-theme', t);
+  document.querySelectorAll('.icon-sun').forEach(el => el.style.display = t === 'dark' ? 'none' : 'block');
+  document.querySelectorAll('.icon-moon').forEach(el => el.style.display = t === 'dark' ? 'block' : 'none');
+};
+window.toggleTheme = function() {
+  window.applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+};
+(function(){ window.applyTheme(localStorage.getItem('pms-theme') || 'dark'); })();
+
+const session = requireDoctor();
+if (!session) throw new Error('Not logged in');
+
+// Reveal the Training tab for trainers only
+if (session.role === 'trainer') {
+  const t = document.getElementById('trainerTrainingTab');
+  if (t) t.style.display = '';
+}
+
+const DAY_NAMES = ['Fri','Sat','Sun','Mon','Tue','Wed','Thu'];
+let myBonuses = [], myStrikes = [], attendance = {};
+let weekOffset = 0;
+let allDoctors = [], allAttendance = [];
+let lbMode = 'this'; // 'this' or 'last'
+
+function getOffsetWeekStart(offset) {
+  const { start } = getCurrentWeekRange();
+  const d = new Date(start);
+  d.setDate(d.getDate() + offset * 7);
+  return d;
+}
+
+async function init() {
+  document.getElementById('navName').textContent    = session.name;
+  document.getElementById('navAvatar').textContent  = session.name.charAt(0).toUpperCase();
+  document.getElementById('welcomeName').textContent = 'Welcome, ' + session.name;
+  // Load home first (it's the default tab), then the rest in parallel
+  await Promise.all([loadHomeData(), loadAttendance(), loadBonuses(), loadStrikes()]);
+}
+
+window.changeWeek = async function(dir) {
+  const newOffset = weekOffset + dir;
+  if (newOffset > 0) return;
+  weekOffset = newOffset;
+  await loadAttendance();
+};
+
+async function loadAttendance() {
+  const weekStart = getOffsetWeekStart(weekOffset);
+  const days = getWeekDays(weekStart);
+  const label = `${days[0].toLocaleDateString('en-US',{day:'numeric',month:'short'})} – ${days[6].toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'})}`;
+  document.getElementById('weekRangeLabel').textContent = label;
+  document.getElementById('weekNext').disabled = weekOffset >= 0;
+  const records = await fsQuery(COLLECTIONS.ATTENDANCE, 'doctorId', '==', session.id);
+  attendance = {};
+  records.forEach(r => { attendance[r.dateKey] = r; });
+  renderWeekGrid(days);
+}
+
+function renderWeekGrid(days) {
+  const today = dateKey(new Date());
+  let present=0, absent=0, late=0, off=0, totalMins=0;
+  const html = days.map((d, i) => {
+    const dk = dateKey(d), rec = attendance[dk];
+    const status = rec ? rec.status : 'unmarked';
+    const isToday = dk === today;
+    const label = { present:'Present', absent:'Absent', late:'Late', off:'Day Off', unmarked:'—' }[status];
+    const cls = status === 'unmarked' ? '' : status;
+    if (status==='present') present++;
+    else if (status==='absent') absent++;
+    else if (status==='late') late++;
+    else if (status==='off') off++;
+    let durHtml = '';
+    if (rec && (status==='present'||status==='late') && (rec.hours||rec.minutes)) {
+      const h=rec.hours||0, m=rec.minutes||0;
+      totalMins += h*60+m;
+      durHtml = `<div class="day-hours">${h}h ${m}m</div>`;
+    }
+    return `<div class="day-cell ${cls} ${isToday?'today':''}">
+      <div class="day-name">${DAY_NAMES[i]}</div>
+      <div class="day-date">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+      <div class="day-status">${label}</div>${durHtml}</div>`;
+  }).join('');
+  const totalH=Math.floor(totalMins/60), totalM=totalMins%60;
+  document.getElementById('weekGrid').innerHTML = html;
+  document.getElementById('attPresent').textContent = present;
+  document.getElementById('attAbsent').textContent  = absent;
+  document.getElementById('attLate').textContent    = late;
+  document.getElementById('attOff').textContent     = off;
+  document.getElementById('attTotalHours').textContent = `${totalH}h ${totalM}m`;
+}
+
+async function loadBonuses() {
+  myBonuses = await fsQuery(COLLECTIONS.BONUSES, 'doctorId', '==', session.id);
+  const { start, end } = getCurrentWeekRange();
+  const weekTotal    = myBonuses.filter(b => { const d=new Date(b.createdAt); return d>=start&&d<=end; }).reduce((s,b)=>s+Number(b.amount||0),0);
+  const pendingTotal = myBonuses.filter(b=>b.status==='pending').reduce((s,b)=>s+Number(b.amount||0),0);
+  document.getElementById('weeklyBonusTotal').textContent = fmtMoney(weekTotal);
+  document.getElementById('pendingBonusTotal').textContent = fmtMoney(pendingTotal);
+  document.getElementById('bonusCount').textContent = myBonuses.length + ' total';
+  if (!myBonuses.length) { document.getElementById('bonusList').innerHTML = '<div class="hint-box">No bonuses recorded yet.</div>'; return; }
+  const sorted = [...myBonuses].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  document.getElementById('bonusList').innerHTML = sorted.map(b => `
+    <div class="bonus-item">
+      <div><div style="font-weight:600;color:var(--white)">${esc(b.note||b.category)}</div><div class="bonus-cat">${esc(b.category)} · ${fmtDate(b.createdAt)}</div></div>
+      <div><div class="bonus-amount">${fmtMoney(b.amount)}</div><div class="bonus-status"><span class="badge ${b.status==='paid'?'badge-green':'badge-orange'}">${b.status==='paid'?'Paid':'Pending'}</span></div></div>
+    </div>`).join('');
+}
+
+async function loadStrikes() {
+  myStrikes = await fsQuery(COLLECTIONS.STRIKES, 'doctorId', '==', session.id);
+  document.getElementById('strikeCount').textContent = myStrikes.length + ' total';
+  if (!myStrikes.length) { document.getElementById('strikeList').innerHTML = '<div class="hint-box">No strikes on record. Keep it up!</div>'; return; }
+  const sorted = [...myStrikes].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  document.getElementById('strikeList').innerHTML = sorted.map(s => `
+    <div class="strike-item"><div class="strike-dot"></div>
+      <div><div style="font-weight:600;color:var(--white)">${esc(s.reason)}</div><div class="text-sm text-muted mt-4">${fmtDate(s.createdAt)}</div></div>
+    </div>`).join('');
+}
+
+async function loadRules() {
+  const container = document.getElementById('rulesCategoriesList');
+  container.innerHTML = '<div class="hint-box">Loading rules...</div>';
+  try {
+    const cats = await fsGetAll(COLLECTIONS.RULES_CATEGORIES);
+    cats.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    if (!cats.length) {
+      container.innerHTML = '<div class="hint-box">No rules have been added yet.</div>';
+      return;
+    }
+    const items = await fsGetAll(COLLECTIONS.RULES_ITEMS);
+    let html = '';
+    for (const cat of cats) {
+      const catItems = items
+        .filter(i => i.categoryId === cat.id)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      html += `
+        <div class="card mb-24">
+          <div class="card-head">
+            <div class="card-title">${esc(cat.name)}</div>
+            <span class="card-count">${catItems.length} rule${catItems.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="card-body">
+            ${catItems.length === 0
+              ? '<div class="hint-box" style="padding:20px;">No rules in this category yet.</div>'
+              : catItems.map((item, i) => `
+                  <div class="rules-item">
+                    <span class="rules-num">${i + 1}</span>
+                    <span class="rules-text">${esc(item.text)}</span>
+                  </div>`).join('')
+            }
+          </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div class="hint-box">Failed to load rules.</div>';
+  }
+}
+
+// ── Markdown renderer (mirrors admin.html) ──────────────────────
+function renderMarkdown(text) {
+  if (!text) return '';
+  let s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const lines = s.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^###\s+(.+)/.test(line)) {
+      out.push('<h4 style="font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--ink);margin:12px 0 4px;">' + line.replace(/^###\s+/, '') + '</h4>'); i++;
+    } else if (/^##\s+(.+)/.test(line)) {
+      out.push('<h3 style="font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--ink);margin:14px 0 6px;">' + line.replace(/^##\s+/, '') + '</h3>'); i++;
+    } else if (/^#\s+(.+)/.test(line)) {
+      out.push('<h2 style="font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--ink);margin:16px 0 8px;">' + line.replace(/^#\s+/, '') + '</h2>'); i++;
+    } else if (/^[-*]\s+/.test(line)) {
+      const listLines = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
+        listLines.push('<li>' + applyInlineMarkdown(lines[i].replace(/^[-*]\s+/, '')) + '</li>'); i++;
+      }
+      out.push('<ul style="margin:6px 0 6px 20px;padding:0;">' + listLines.join('') + '</ul>');
+    } else if (/^\d+\.\s+/.test(line)) {
+      const listLines = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+        listLines.push('<li>' + applyInlineMarkdown(lines[i].replace(/^\d+\.\s+/, '')) + '</li>'); i++;
+      }
+      out.push('<ol style="margin:6px 0 6px 20px;padding:0;">' + listLines.join('') + '</ol>');
+    } else if (line.trim() === '') {
+      out.push('<div style="height:8px"></div>'); i++;
+    } else {
+      out.push('<p style="margin:0 0 4px;">' + applyInlineMarkdown(line) + '</p>'); i++;
+    }
+  }
+  return out.join('');
+}
+function applyInlineMarkdown(s) {
+  return s
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:13px;">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/_([^_]+)_/g, '<em>$1</em>');
+}
+
+async function loadTraining() {
+  const container = document.getElementById('trainingCategoriesList');
+  container.innerHTML = '<div class="hint-box">Loading training...</div>';
+  try {
+    const cats = await fsGetAll(COLLECTIONS.TRAINING_CATEGORIES);
+    cats.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    if (!cats.length) {
+      container.innerHTML = '<div class="hint-box">No training instructions have been added yet. Check back later.</div>';
+      return;
+    }
+    const items = await fsGetAll(COLLECTIONS.TRAINING_ITEMS);
+    let html = '';
+    for (const cat of cats) {
+      const catItems = items
+        .filter(i => i.categoryId === cat.id)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      html += `
+        <div class="card mb-24">
+          <div class="card-head">
+            <div class="card-title">${esc(cat.name)}</div>
+            <span class="card-count">${catItems.length} item${catItems.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="card-body">
+            ${catItems.length === 0
+              ? '<div class="hint-box" style="padding:20px;">No instructions in this category yet.</div>'
+              : catItems.map((item, i) => `
+                  <div class="rules-item">
+                    <span class="rules-num">${i + 1}</span>
+                    <span class="rules-text md-content">${renderMarkdown(item.text)}</span>
+                  </div>`).join('')
+            }
+          </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div class="hint-box">Failed to load training.</div>';
+  }
+}
+
+// ── Home Tab ─────────────────────────────────────────────────────
+let homeLoaded = false;
+
+async function loadHomeData() {
+  if (homeLoaded) return;
+  allDoctors    = await fsGetAll(COLLECTIONS.DOCTORS);
+  allAttendance = await fsGetAll(COLLECTIONS.ATTENDANCE);
+  homeLoaded = true;
+  renderPodium();
+  renderLeaderboard();
+  renderTeamStrip();
+}
+
+function calcWeekMins(doctorId, weekStart) {
+  const days = getWeekDays(weekStart);
+  const keys  = new Set(days.map(d => dateKey(d)));
+  return allAttendance
+    .filter(r => r.doctorId === doctorId && keys.has(r.dateKey) && (r.status==='present'||r.status==='late'))
+    .reduce((s, r) => s + (Number(r.hours||0)*60 + Number(r.minutes||0)), 0);
+}
+
+function rankSvgBadge(rank, color) {
+  // SVG crown for 1st, chevron-up for 2nd, shield for 3rd
+  const icons = {
+    1: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="2 20 7 4 12 12 17 4 22 20"/><line x1="2" y1="20" x2="22" y2="20"/></svg>`,
+    2: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M12 14v4"/><path d="M8 22h8"/><line x1="12" y1="18" x2="12" y2="22"/></svg>`,
+    3: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>`,
+  };
+  return icons[rank] || '';
+}
+
+function podiumCard(rank, doc, mins, heightPx, glowColor) {
+  const h = Math.floor(mins/60), m = mins%60;
+  const hoursStr = mins > 0 ? `${h}h ${m}m` : '0h';
+  const initial = (doc?.name || '?').charAt(0).toUpperCase();
+  const name = doc ? esc(doc.name) : '—';
+  const isMe = doc && doc.id === session.id;
+  return `
+    <div class="podium-card" style="--glow:${glowColor};height:${heightPx}px;">
+      <div class="podium-medal" style="margin-top:auto">${rankSvgBadge(rank, glowColor)}</div>
+      <div class="podium-avatar ${isMe?'podium-me':''}">${initial}</div>
+      <div class="podium-name">${name}${isMe?' <span class="podium-you-badge">You</span>':''}</div>
+      <div class="podium-hours">${hoursStr}</div>
+      <div class="podium-rank-base" style="background:${glowColor}20;border-top:2px solid ${glowColor}40;"></div>
+    </div>`;
+}
+
+function emptyPodiumSlot(rank, minH, glowColor) {
+  const rankLabel = ['', '1st', '2nd', '3rd'][rank];
+  return `
+    <div class="podium-card podium-empty-slot" style="--glow:${glowColor};min-height:${minH}px;">
+      <div class="podium-medal" style="margin-top:auto;opacity:0.25">${rankSvgBadge(rank, glowColor)}</div>
+      <div class="podium-avatar podium-avatar-empty">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      </div>
+      <div class="podium-name" style="opacity:0.4">${rankLabel} Place</div>
+      <div class="podium-hours" style="opacity:0.3">No hours</div>
+      <div class="podium-rank-base" style="background:${glowColor};opacity:0.15;"></div>
+    </div>`;
+}
+
+function renderPodium() {
+  const lastWeekStart = (() => {
+    const s = new Date(getCurrentWeekRange().start);
+    s.setDate(s.getDate() - 7);
+    return s;
+  })();
+  // Only include doctors with actual hours
+  const ranked = allDoctors
+    .filter(d => !d.disabled)
+    .map(d => ({ doc: d, mins: calcWeekMins(d.id, lastWeekStart) }))
+    .filter(e => e.mins > 0)
+    .sort((a, b) => b.mins - a.mins);
+
+  const wrap = document.getElementById('podiumWrap');
+  if (!ranked.length) { wrap.innerHTML = '<div class="hint-box">No hours logged last week yet.</div>'; return; }
+
+  const first  = ranked[0] || null;
+  const second = ranked[1] || null;
+  const third  = ranked[2] || null;
+
+  wrap.innerHTML = `
+    <div class="podium">
+      ${second ? podiumCard(2, second.doc, second.mins, 200, '#94a3b8') : emptyPodiumSlot(2, 200, '#94a3b8')}
+      ${first  ? podiumCard(1, first.doc,  first.mins,  260, '#f59e0b') : emptyPodiumSlot(1, 260, '#f59e0b')}
+      ${third  ? podiumCard(3, third.doc,  third.mins,  170, '#cd7f32') : emptyPodiumSlot(3, 170, '#cd7f32')}
+    </div>`;
+}
+
+window.switchLeaderboard = function(mode) {
+  lbMode = mode;
+  document.getElementById('lbThisBtn').classList.toggle('active', mode==='this');
+  document.getElementById('lbLastBtn').classList.toggle('active', mode==='last');
+  document.getElementById('lbTitleText').textContent = mode==='this' ? 'This Week — Full Rankings' : 'Last Week — Full Rankings';
+  renderLeaderboard();
+};
+
+function renderLeaderboard() {
+  const weekStart = (() => {
+    const s = new Date(getCurrentWeekRange().start);
+    if (lbMode === 'last') s.setDate(s.getDate() - 7);
+    return s;
+  })();
+  // Only show doctors who have at least some hours
+  const ranked = allDoctors
+    .filter(d => !d.disabled)
+    .map(d => ({ doc: d, mins: calcWeekMins(d.id, weekStart) }))
+    .filter(e => e.mins > 0)
+    .sort((a, b) => b.mins - a.mins);
+
+  const container = document.getElementById('leaderboardList');
+  if (!ranked.length) {
+    container.innerHTML = `
+      <div class="lb-empty">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3;margin-bottom:10px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>No hours logged ${lbMode==='last'?'last':'this'} week yet.</div>
+      </div>`;
+    return;
+  }
+
+  const maxMins = ranked[0].mins;
+
+  const rankBadgeSvg = (i) => {
+    const cfg = [
+      { color:'#f59e0b', svg:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="2 20 7 4 12 12 17 4 22 20"/><line x1="2" y1="20" x2="22" y2="20"/></svg>` },
+      { color:'#94a3b8', svg:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M9 20h6"/><line x1="12" y1="14" x2="12" y2="20"/></svg>` },
+      { color:'#cd7f32', svg:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#cd7f32" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>` },
+    ];
+    if (i < 3) return `<span class="lb-rank-icon" style="color:${cfg[i].color}">${cfg[i].svg}</span>`;
+    return `<span class="lb-rank-num">${i+1}</span>`;
+  };
+
+  container.innerHTML = ranked.map((entry, i) => {
+    const { doc, mins } = entry;
+    const h = Math.floor(mins/60), m = mins%60;
+    const hoursStr = `${h}h ${m}m`;
+    const pct = Math.round((mins/maxMins)*100);
+    const isMe = doc.id === session.id;
+    return `
+      <div class="lb-row ${isMe?'lb-row-me':''}">
+        <div class="lb-rank">${rankBadgeSvg(i)}</div>
+        <div class="lb-avatar">${doc.name.charAt(0).toUpperCase()}</div>
+        <div class="lb-info">
+          <div class="lb-name">${esc(doc.name)}${isMe?' <span class="lb-you">You</span>':''}</div>
+          <div class="lb-bar-wrap"><div class="lb-bar" style="width:${pct}%"></div></div>
+        </div>
+        <div class="lb-hours">${hoursStr}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderTeamStrip() {
+  const thisWeekStart = getCurrentWeekRange().start;
+  const days = getWeekDays(thisWeekStart);
+  const todayKey = dateKey(new Date());
+  const activeDoctors = allDoctors.filter(d => !d.disabled);
+
+  const teamMins = activeDoctors.reduce((s, d) => s + calcWeekMins(d.id, thisWeekStart), 0);
+  const presentToday = allAttendance.filter(r =>
+    r.dateKey === todayKey && (r.status==='present'||r.status==='late')
+  ).length;
+
+  const th = Math.floor(teamMins/60), tm = teamMins%60;
+  document.getElementById('teamTotalHours').textContent   = `${th}h ${tm}m`;
+  document.getElementById('teamPresentCount').textContent = presentToday;
+  document.getElementById('teamDoctorCount').textContent  = activeDoctors.length;
+  document.getElementById('homeTeamStrip').style.display = 'grid';
+}
+
+window.showTab = function(name) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  const idx={home:0,attendance:1,bonuses:2,rules:3,training:4}[name];
+  document.querySelectorAll('.tab')[idx]?.classList.add('active');
+  if (name === 'rules')    loadRules();
+  if (name === 'training') loadTraining();
+  if (name === 'home')     loadHomeData();
+};
+
+window.doLogout = async function() { await writeLog(LOG_ACTIONS.LOGOUT,{}); clearSession(); window.location.href='login.html'; };
+
+// ── Account switch: Doctor → back to Admin ─────────────────────
+// Only show the button when an admin account is linked (i.e. we got here by
+// switching from admin). Normal doctors never see it.
+(function(){
+  const alt = getSwitchAlt();
+  if (alt && alt.role === 'admin') {
+    document.getElementById('switchToAdminBtn').style.display = '';
+  }
+})();
+window.switchToAdmin = function(){
+  const alt = getSwitchAlt();
+  if (!alt || alt.role !== 'admin') { showToast('No admin account linked.','error'); return; }
+  switchAccount();
+  window.location.href = 'admin.html';
+};
+
+init().catch(e=>{ console.error(e); showToast('Failed to load data.', 'error'); });
+</script>
+</body>
+</html>

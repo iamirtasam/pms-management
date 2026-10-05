@@ -1,0 +1,2939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMS Portal — Admin Panel</title>
+<link rel="stylesheet" href="styles.css">
+<script>(function(){var t=localStorage.getItem('pms-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();</script>
+<style>
+  /* ── Bot Console ───────────────────────────────────────────── */
+  .console-terminal{
+    background:#0b0e14; border:1px solid #1d2230; border-radius:14px;
+    padding:16px 18px; height:60vh; min-height:360px; overflow-y:auto;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,"Courier New",monospace;
+    font-size:12.5px; line-height:1.6; color:#cdd3de;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .console-terminal::-webkit-scrollbar{width:10px;}
+  .console-terminal::-webkit-scrollbar-thumb{background:#2a3142;border-radius:8px;}
+  .console-empty{color:#5b6472;font-style:italic;}
+  .log-line{display:flex;gap:8px;align-items:flex-start;padding:1px 0;}
+  .log-time{color:#5b6472;flex-shrink:0;}
+  .log-icon{flex-shrink:0;width:12px;text-align:center;}
+  .log-msg{flex:1;}
+  .log-success .log-icon,.log-success .log-msg{color:#3fb950;}
+  .log-error   .log-icon,.log-error   .log-msg{color:#f85149;}
+  .log-warning .log-icon,.log-warning .log-msg{color:#d29922;}
+  .log-info    .log-icon{color:#58a6ff;}
+  .log-info    .log-msg{color:#cdd3de;}
+  .log-default .log-msg{color:#9aa4b2;}
+  .console-status{font-size:12px;font-weight:600;letter-spacing:-0.1px;padding:4px 10px;border-radius:999px;}
+  .console-status-on{color:#3fb950;background:rgba(63,185,80,0.12);}
+  .console-status-off{color:#8b949e;background:rgba(139,148,158,0.12);}
+  .console-meta{margin-top:10px;font-size:12px;color:var(--color-graphite);}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <img class="navbar-logo" src="https://cdn.discordapp.com/attachments/1066446515062702140/1476648699559022914/transparentlogo.png?ex=69b5aa44&is=69b458c4&hm=c30e9123921f3b3609d5998d1feaf8daeafb5488b092ec5877bb35ef064ecf08&" alt="EMS Logo" onerror="this.style.display='none'">
+  <div class="navbar-brand">
+    <div class="navbar-title">EMS Portal</div>
+    <div class="navbar-sub">/ Admin Panel</div>
+  </div>
+  <div class="navbar-right">
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <div class="nav-user">
+      <div class="nav-user-avatar" id="navAvatar">A</div>
+      <div>
+        <div class="nav-user-name" id="navAdminName">Admin</div>
+        <div class="nav-user-role" id="navAdminRole">Administrator</div>
+      </div>
+    </div>
+    <button class="btn btn-outline btn-sm" id="switchToDoctorBtn" onclick="switchToDoctor()" title="Switch to your doctor account">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>
+      <span class="btn-label">Switch to Doctor</span>
+    </button>
+    <button class="btn btn-outline btn-sm" onclick="doLogout()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span class="btn-label">Logout</span>
+    </button>
+  </div>
+</nav>
+
+<div class="page-lg">
+
+  <div class="admin-hero">
+    <div>
+      <div class="admin-hero-title">Admin Control Panel</div>
+      <div class="admin-hero-sub">Manage doctors, attendance, bonuses and strikes</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row mb-32">
+    <div class="stat-card blue"><div class="stat-num" id="sDoctors">—</div><div class="stat-lbl">Doctors</div></div>
+    <div class="stat-card"><div class="stat-num" id="sBonusPending" style="color:var(--color-warning)">—</div><div class="stat-lbl">Pending Bonuses</div></div>
+    <div class="stat-card"><div class="stat-num" id="sStrikes" style="color:var(--color-danger)">—</div><div class="stat-lbl">Total Strikes</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar">
+    <div class="tab active" onclick="showTab('doctors')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Doctors
+    </div>
+    <div class="tab" onclick="showTab('attendance')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Attendance
+    </div>
+    <div class="tab" onclick="showTab('bonuses')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      Bonuses
+    </div>
+    <div class="tab" onclick="showTab('strikes')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Strikes
+    </div>
+    <div class="tab" data-tab="rules" onclick="showTab('rules')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Rules
+    </div>
+    <div class="tab" data-tab="training" onclick="showTab('training')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+      Training
+    </div>
+    <div class="tab" onclick="showTab('console')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      Console
+    </div>
+    <div class="tab" id="tabAdmins" style="display:none" onclick="showTab('admins')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Admins
+    </div>
+  </div>
+
+  <!-- DOCTORS -->
+  <div class="view active" id="view-doctors">
+    <div class="flex-between mb-24">
+      <div class="sec-head" style="margin-bottom:0"><div class="sec-bar"></div><div class="sec-title">Doctor Accounts</div></div>
+      <button class="btn btn-primary" onclick="openModal('addDoctor')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Doctor
+      </button>
+    </div>
+    <div class="bonus-shell" id="doctorsShell" style="grid-template-columns: 340px 1fr;">
+      <div class="bonus-side" id="doctorsSide"></div>
+      <div class="bonus-detail" id="doctorDetail"></div>
+    </div>
+  </div>
+
+  <!-- ATTENDANCE -->
+  <div class="view" id="view-attendance">
+    <div class="sec-head"><div class="sec-bar"></div><div class="sec-title">Mark Attendance</div></div>
+    <div class="card mb-24">
+      <div class="card-head">
+        <div class="card-title">Add Attendance Record</div>
+        <span id="durationPreview"><span class="duration-chip" id="durationDisplay">0h 0m</span></span>
+      </div>
+      <div class="card-body">
+        <div class="att-form">
+          <div class="form-group"><div class="form-label">Doctor *</div>
+            <div class="custom-select" data-cs-search>
+              <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label placeholder">Select doctor...</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <div class="cs-dropdown"></div>
+              <select id="attDoctor" style="display:none" aria-hidden="true"><option value="">Select doctor...</option></select>
+            </div>
+          </div>
+          <div class="form-group"><div class="form-label">Date *</div><input type="date" class="form-input" id="attDate"></div>
+          <div class="form-group"><div class="form-label">Status *</div>
+            <div class="custom-select">
+              <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label">Present</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <div class="cs-dropdown"></div>
+              <select id="attStatus" style="display:none" aria-hidden="true" onchange="toggleHoursField()">
+                <option value="present">Present</option>
+                <option value="absent">Absent</option>
+                <option value="late">Late</option>
+                <option value="off">Day Off</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" id="hoursGroup"><div class="form-label">Hours</div><input type="number" class="form-input" id="attHours" placeholder="0" min="0" max="24"></div>
+          <div class="form-group" id="minsGroup"><div class="form-label">Minutes</div><input type="number" class="form-input" id="attMins" placeholder="0" min="0" max="59"></div>
+          <div class="att-submit">
+            <button class="btn btn-primary" id="attBtn" onclick="markAttendance()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Mark Attendance
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sec-head"><div class="sec-bar"></div><div class="sec-title">View Doctor Attendance</div></div>
+    <div class="att-view-bar">
+      <div class="custom-select att-view-select" data-cs-search>
+        <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label placeholder">Select doctor to view...</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="cs-dropdown"></div>
+        <select id="viewAttDoctor" style="display:none" aria-hidden="true" onchange="resetAttWeek()"><option value="">Select doctor to view...</option></select>
+      </div>
+      <div class="week-nav" id="attWeekNav" style="display:none;">
+        <button class="week-nav-btn" id="attWeekPrev" onclick="changeAttWeek(-1)" aria-label="Previous week">&#8249;</button>
+        <div class="week-nav-label" id="attWeekLabel">—</div>
+        <button class="week-nav-btn" id="attWeekNext" onclick="changeAttWeek(1)" aria-label="Next week">&#8250;</button>
+      </div>
+    </div>
+    <div id="attViewArea"><div class="hint-box">Select a doctor to view their attendance</div></div>
+  </div>
+
+  <!-- BONUSES -->
+  <div class="view" id="view-bonuses">
+    <div class="flex-between mb-24">
+      <div class="sec-head" style="margin-bottom:0"><div class="sec-bar"></div><div class="sec-title">Manage Bonuses</div></div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="btn btn-outline" onclick="downloadPendingBonuses()" title="Download all pending bonuses as a text file">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span class="btn-label">Download Pending</span>
+        </button>
+        <button class="btn btn-primary" onclick="openModal('addBonus')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Bonus
+        </button>
+      </div>
+    </div>
+    <div class="bonus-total-card">
+      <div>
+        <div class="bonus-total-label">Total Bonuses (All Time)</div>
+        <div class="bonus-total-amt" id="adminTotalBonus">$0</div>
+      </div>
+      <div class="bonus-total-divider"></div>
+      <div>
+        <div class="bonus-total-label">Pending Payout</div>
+        <div class="bonus-total-amt" id="adminPendingBonus" style="color: var(--color-warning);">$0</div>
+      </div>
+    </div>
+    <div class="card mb-24" id="bonusCalcCard">
+      <div class="card-head" style="cursor:pointer;" onclick="toggleCalc()">
+        <div class="card-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>
+          Bonus Calculator
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="card-count">$1M per 15 hrs</span>
+          <svg id="calcChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition:transform 0.2s ease;transform:rotate(0deg)"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </div>
+      <div class="card-body" id="calcBody">
+        <div class="form-grid-2" style="gap:20px;align-items:flex-start;">
+          <div class="form-group">
+            <label class="form-label">Paste Attendance Lines</label>
+            <textarea id="calcInput" class="form-input" rows="6" placeholder="Mudasir Saleem: 50 Hours 20 Minutes&#10;Arsal Khan: 45 Hours 0 Minutes" style="resize:vertical;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:13px;line-height:1.6;"></textarea>
+            <div style="display:flex;gap:10px;margin-top:10px;">
+              <button class="btn btn-primary btn-sm" onclick="runBonusCalc()">Calculate</button>
+              <button class="btn btn-outline btn-sm" onclick="clearCalc()">Clear</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Result</label>
+            <div id="calcOutput" class="form-input" style="min-height:140px;white-space:pre-wrap;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:13px;line-height:1.6;background:var(--color-fog);cursor:text;overflow-y:auto;color:var(--color-ink);">Results will appear here...</div>
+            <button class="btn btn-outline btn-sm" id="copyCalcBtn" onclick="copyCalcResult()" style="margin-top:10px;display:none;">Copy Result</button>
+          </div>
+        </div>
+        <div class="notice notice-info mt-12" style="margin-bottom:0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Rate: $1,000,000 per 15 hours &middot; Values rounded to 1 decimal place</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Manage by Doctor</div><div class="card-count" id="bonusTableCount">0</div></div>
+      <div class="bonus-shell" id="bonusShell">
+        <!-- populated by renderBonusLayout() -->
+        <div class="bonus-side" id="bonusOuterSide"></div>
+        <div class="bonus-side" id="bonusInnerSide"></div>
+        <div class="bonus-detail" id="bonusDetail"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STRIKES -->
+  <div class="view" id="view-strikes">
+    <div class="flex-between mb-24">
+      <div class="sec-head" style="margin-bottom:0"><div class="sec-bar"></div><div class="sec-title">Manage Strikes</div></div>
+      <button class="btn btn-danger" onclick="openModal('addStrike')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Strike
+      </button>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">All Strike Records</div><div class="card-count" id="strikeTableCount">0</div></div>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Doctor</th><th>Reason</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody id="strikeTable">
+            <tr><td><div class="skeleton" style="height:14px;width:60%"></div></td><td><div class="skeleton" style="height:12px;width:90%"></div></td><td><div class="skeleton" style="height:12px;width:60px"></div></td><td><div class="skeleton" style="height:24px;width:60px;border-radius:999px"></div></td></tr>
+            <tr><td><div class="skeleton" style="height:14px;width:60%"></div></td><td><div class="skeleton" style="height:12px;width:90%"></div></td><td><div class="skeleton" style="height:12px;width:60px"></div></td><td><div class="skeleton" style="height:24px;width:60px;border-radius:999px"></div></td></tr>
+            <tr><td><div class="skeleton" style="height:14px;width:60%"></div></td><td><div class="skeleton" style="height:12px;width:90%"></div></td><td><div class="skeleton" style="height:12px;width:60px"></div></td><td><div class="skeleton" style="height:24px;width:60px;border-radius:999px"></div></td></tr>
+            <tr><td><div class="skeleton" style="height:14px;width:60%"></div></td><td><div class="skeleton" style="height:12px;width:90%"></div></td><td><div class="skeleton" style="height:12px;width:60px"></div></td><td><div class="skeleton" style="height:24px;width:60px;border-radius:999px"></div></td></tr>
+            <tr><td><div class="skeleton" style="height:14px;width:60%"></div></td><td><div class="skeleton" style="height:12px;width:90%"></div></td><td><div class="skeleton" style="height:12px;width:60px"></div></td><td><div class="skeleton" style="height:24px;width:60px;border-radius:999px"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- RULES -->
+  <div class="view" id="view-rules">
+    <div class="flex-between mb-24">
+      <div class="sec-title">Manage Rules</div>
+      <button class="btn btn-primary btn-sm" onclick="openAddCategoryModal()">+ Add Category</button>
+    </div>
+    <div id="adminRulesList">
+      <div class="hint-box">Loading rules...</div>
+    </div>
+  </div>
+
+  <!-- TRAINING -->
+  <div class="view" id="view-training">
+    <div class="flex-between mb-24">
+      <div class="sec-title">Training Instructions</div>
+      <button class="btn btn-primary btn-sm" onclick="openAddTrainingCategoryModal()">+ Add Category</button>
+    </div>
+    <div class="notice notice-info">
+      These training instructions are visible to doctors with the <strong>Trainer</strong> role on their dashboard.
+    </div>
+    <div id="adminTrainingList">
+      <div class="hint-box">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ADMINS -->
+  <div class="view" id="view-admins">
+    <div class="flex-between mb-24">
+      <div class="sec-head" style="margin-bottom:0"><div class="sec-bar"></div><div class="sec-title">Sub-Admin Accounts</div></div>
+      <button class="btn btn-primary" onclick="openModal('addAdmin')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Sub-Admin
+      </button>
+    </div>
+    <div class="notice notice-info">
+      Master Admin only. Sub-admins can manage doctors, attendance, bonuses, and strikes — but cannot add or remove other admins.
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Sub-Admin Accounts</div><div class="card-count" id="adminCount">0</div></div>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Name</th><th>Username</th><th>Discord ID</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody id="adminsTable"><tr class="tbl-empty"><td colspan="6">No sub-admins yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Bot Control Admins -->
+    <div class="card" style="margin-top:24px;">
+      <div class="card-head"><div class="card-title">Bot Control Admins (Discord)</div><div class="card-count" id="botAdminCount">0</div></div>
+      <div class="notice notice-info">
+        Discord users listed here can approve attendance with a ✅ reaction and run <strong>pms!</strong> DM commands. Changes reach the bot within ~60 seconds — no restart needed. A few core IDs are always enabled as a built-in safety fallback and won't appear below.
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:18px 0;">
+        <div class="form-group" style="flex:1;min-width:160px;margin:0;"><div class="form-label">Name / Label</div><input type="text" class="form-input" id="newBotAdminName" placeholder="e.g. John"></div>
+        <div class="form-group" style="flex:1;min-width:220px;margin:0;"><div class="form-label">Discord User ID</div><input type="text" class="form-input" id="newBotAdminId" placeholder="e.g. 1007633493427228672"></div>
+        <button class="btn btn-primary" id="addBotAdminBtn" onclick="addBotAdmin()">Add</button>
+      </div>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Name</th><th>Discord ID</th><th>Actions</th></tr></thead>
+          <tbody id="botAdminsTable"><tr class="tbl-empty"><td colspan="3">No managed bot admins yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONSOLE -->
+  <div class="view" id="view-console">
+    <div class="flex-between mb-24">
+      <div class="sec-head" style="margin-bottom:0"><div class="sec-bar"></div><div class="sec-title">Bot Console</div></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span id="consoleStatus" class="console-status console-status-off">Connecting…</span>
+        <button class="btn btn-outline btn-sm" onclick="toggleConsoleAutoscroll()" id="consoleScrollBtn">Autoscroll: On</button>
+      </div>
+    </div>
+    <div class="notice notice-info">
+      Live output from the PMS bot, mirrored in realtime. Shows the last 300 log lines.
+    </div>
+    <div id="consoleTerminal" class="console-terminal"><div class="console-empty">Waiting for bot output…</div></div>
+    <div class="console-meta" id="consoleMeta"></div>
+  </div>
+
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal-switchDoctor">
+  <div class="modal">
+    <h3>Switch to Doctor Account</h3>
+    <p>Enter your doctor login once. You'll then be able to toggle between your admin and doctor accounts instantly.</p>
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Doctor Username</div><input type="text" class="form-input" id="switchDocUser" placeholder="Your doctor username" autocomplete="off"></div>
+      <div class="form-group"><div class="form-label">Doctor Password</div><input type="password" class="form-input" id="switchDocPass" placeholder="Your doctor password"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('switchDoctor')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" id="switchDocBtn" onclick="confirmSwitchToDoctor()">Switch</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-addDoctor">
+  <div class="modal">
+    <h3>Add Doctor Account</h3>
+    <p>Create a new doctor login. The doctor will use these credentials to sign in.</p>
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Full Name *</div><input type="text" class="form-input" id="newDocName" placeholder="Dr. John Smith"></div>
+      <div class="form-group"><div class="form-label">Username *</div><input type="text" class="form-input" id="newDocUser" placeholder="dr.johnsmith" autocomplete="off"></div>
+      <div class="form-group"><div class="form-label">Password *</div><input type="password" class="form-input" id="newDocPass" placeholder="Set a password"></div>
+      <div class="form-group"><div class="form-label">Discord ID (optional)</div><input type="text" class="form-input" id="newDocDiscord" placeholder="e.g. 1313880842925244420"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('addDoctor')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" id="addDocBtn" onclick="addDoctor()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-editDoctor">
+  <div class="modal">
+    <h3>Edit Doctor</h3>
+    <p>Update this doctor's details. Leave password blank to keep the current one.</p>
+    <input type="hidden" id="editDocId">
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Full Name *</div><input type="text" class="form-input" id="editDocName"></div>
+      <div class="form-group"><div class="form-label">Username *</div><input type="text" class="form-input" id="editDocUser" autocomplete="off"></div>
+      <div class="form-group"><div class="form-label">New Password <span style="color:var(--color-graphite);font-weight:400;font-size:12px">(leave blank to keep)</span></div><input type="password" class="form-input" id="editDocPass" placeholder="Leave blank to keep unchanged"></div>
+      <div class="form-group"><div class="form-label">Discord ID (optional)</div><input type="text" class="form-input" id="editDocDiscord"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('editDoctor')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" id="editDocBtn" onclick="saveEditDoctor()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addBonus">
+  <div class="modal">
+    <h3>Add Bonus</h3>
+    <p>Add a bonus record for a doctor. They will see this on their dashboard.</p>
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Doctor *</div>
+        <div class="custom-select" data-cs-search>
+          <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label placeholder">Select doctor...</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="cs-dropdown"></div>
+          <select id="bonusDoctor" style="display:none" aria-hidden="true"><option value="">Select doctor...</option></select>
+        </div>
+      </div>
+      <div class="form-group"><div class="form-label">Category *</div>
+        <div class="custom-select">
+          <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label placeholder">Select category...</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="cs-dropdown"></div>
+          <select id="bonusCat" style="display:none" aria-hidden="true"></select>
+        </div>
+      </div>
+      <div class="form-group"><div class="form-label">Note (optional)</div><input type="text" class="form-input" id="bonusNote" placeholder="e.g. Best responder of the week"></div>
+      <div class="form-group"><div class="form-label">Amount ($) *</div><input type="number" class="form-input" id="bonusAmt" placeholder="0" min="0"></div>
+      <div class="form-group"><div class="form-label">Status</div>
+        <div class="custom-select">
+          <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label">Pending</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="cs-dropdown"></div>
+          <select id="bonusStatus" style="display:none" aria-hidden="true"><option value="pending">Pending</option><option value="paid">Paid</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('addBonus')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" id="addBonusBtn" onclick="addBonus()">Add Bonus</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-editBonus">
+  <div class="modal">
+    <h3>Edit Bonus</h3>
+    <p>Adjust the amount or note. Use Mark Paid to change status.</p>
+    <input type="hidden" id="editBonusId">
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Amount ($) *</div><input type="number" class="form-input" id="editBonusAmt" placeholder="0" min="0"></div>
+      <div class="form-group"><div class="form-label">Note (optional)</div><input type="text" class="form-input" id="editBonusNote" placeholder="e.g. Best responder of the week"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('editBonus')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" id="editBonusBtn" onclick="saveEditBonus()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addStrike">
+  <div class="modal">
+    <h3>Add Strike</h3>
+    <p>Issue a strike against a doctor. They will see this on their dashboard.</p>
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Doctor *</div>
+        <div class="custom-select" data-cs-search>
+          <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label placeholder">Select doctor...</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="cs-dropdown"></div>
+          <select id="strikeDoctor" style="display:none" aria-hidden="true"><option value="">Select doctor...</option></select>
+        </div>
+      </div>
+      <div class="form-group"><div class="form-label">Reason *</div><input type="text" class="form-input" id="strikeReason" placeholder="e.g. Missed shift without notice"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('addStrike')">Cancel</button>
+      <button class="btn btn-danger btn-full btn-lg" id="addStrikeBtn" onclick="addStrike()">Issue Strike</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addAdmin">
+  <div class="modal">
+    <h3>Add Sub-Admin</h3>
+    <p>Sub-admins can manage all data except adding other admins.</p>
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Full Name *</div><input type="text" class="form-input" id="newAdminName" placeholder="e.g. John Manager"></div>
+      <div class="form-group"><div class="form-label">Username *</div><input type="text" class="form-input" id="newAdminUser" placeholder="e.g. john.manager" autocomplete="off"></div>
+      <div class="form-group"><div class="form-label">Password *</div><input type="password" class="form-input" id="newAdminPass" placeholder="Set a strong password"></div>
+      <div class="form-group"><div class="form-label">Discord ID <span style="color:var(--color-graphite);font-weight:400;font-size:12px">(optional — for DM notifications)</span></div><input type="text" class="form-input" id="newAdminDiscord" placeholder="e.g. 1007633493427228672"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('addAdmin')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" id="addAdminBtn" onclick="addSubAdmin()">Create Sub-Admin</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-editAdmin">
+  <div class="modal">
+    <h3>Edit Sub-Admin</h3>
+    <p>Update this sub-admin's details. Leave password blank to keep current.</p>
+    <input type="hidden" id="editAdminId">
+    <div class="modal-form">
+      <div class="form-group"><div class="form-label">Full Name *</div><input type="text" class="form-input" id="editAdminName"></div>
+      <div class="form-group"><div class="form-label">Username *</div><input type="text" class="form-input" id="editAdminUser" autocomplete="off"></div>
+      <div class="form-group"><div class="form-label">New Password <span style="color:var(--color-graphite);font-weight:400;font-size:12px">(leave blank to keep)</span></div><input type="password" class="form-input" id="editAdminPass" placeholder="Leave blank to keep unchanged"></div>
+      <div class="form-group"><div class="form-label">Discord ID <span style="color:var(--color-graphite);font-weight:400;font-size:12px">(optional — for DM notifications)</span></div><input type="text" class="form-input" id="editAdminDiscord" placeholder="e.g. 1007633493427228672"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('editAdmin')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" id="editAdminBtn" onclick="saveEditAdmin()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addCategory">
+  <div class="modal">
+    <h3>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      New Category
+    </h3>
+    <p>Create a new rules category. Doctors will see this as a section heading.</p>
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Category Name</label>
+        <input type="text" id="newCategoryName" class="form-input" placeholder="e.g. Robbery, Conduct, Uniforms...">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('addCategory')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveCategory()">Create Category</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addRule">
+  <div class="modal">
+    <h3>Add Rule</h3>
+    <p id="addRuleModalSub">Adding rule to category.</p>
+    <input type="hidden" id="addRuleCategoryId">
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Rule Text</label>
+        <textarea id="newRuleText" class="form-input" rows="3" placeholder="Describe the rule clearly and concisely..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('addRule')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveRule()">Add Rule</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-editRule">
+  <div class="modal">
+    <h3>Edit Rule</h3>
+    <p>Update this rule's text.</p>
+    <input type="hidden" id="editRuleId">
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Rule Text</label>
+        <textarea id="editRuleText" class="form-input" rows="3"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('editRule')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" onclick="saveEditRule()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-editCategory">
+  <div class="modal">
+    <h3>Edit Category</h3>
+    <p>Rename this rules category.</p>
+    <input type="hidden" id="editCategoryId">
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Category Name</label>
+        <input type="text" id="editCategoryName" class="form-input">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('editCategory')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" onclick="saveEditCategory()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addTrainingCategory">
+  <div class="modal">
+    <h3>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      New Training Category
+    </h3>
+    <p>Create a new training category. Trainers will see this as a section heading.</p>
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Category Name</label>
+        <input type="text" id="newTrainingCategoryName" class="form-input" placeholder="e.g. Patient Triage, Field Protocol...">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('addTrainingCategory')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveTrainingCategory()">Create Category</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addTrainingRule">
+  <div class="modal">
+    <h3>Add Training Instruction</h3>
+    <p id="addTrainingRuleModalSub">Adding instruction to category.</p>
+    <input type="hidden" id="addTrainingRuleCategoryId">
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Instruction Text</label>
+        <textarea id="newTrainingRuleText" class="form-input" rows="8" placeholder="Describe the training instruction clearly...
+Supports markdown: **bold**, *italic*, # Heading, - bullet list, 1. numbered list, `code`"></textarea>
+        <div style="font-size:11px;color:var(--graphite);margin-top:6px;">Supports <strong>**bold**</strong>, <em>*italic*</em>, <code># Heading</code>, <code>- bullet</code>, <code>1. numbered</code>, <code>`code`</code></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('addTrainingRule')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveTrainingRule()">Add Instruction</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-editTrainingRule">
+  <div class="modal">
+    <h3>Edit Training Instruction</h3>
+    <p>Update this training instruction's text.</p>
+    <input type="hidden" id="editTrainingRuleId">
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Instruction Text</label>
+        <textarea id="editTrainingRuleText" class="form-input" rows="8"></textarea>
+        <div style="font-size:11px;color:var(--graphite);margin-top:6px;">Supports <strong>**bold**</strong>, <em>*italic*</em>, <code># Heading</code>, <code>- bullet</code>, <code>1. numbered</code>, <code>`code`</code></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('editTrainingRule')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" onclick="saveEditTrainingRule()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-editTrainingCategory">
+  <div class="modal">
+    <h3>Edit Training Category</h3>
+    <p>Rename this training category.</p>
+    <input type="hidden" id="editTrainingCategoryId">
+    <div class="modal-form">
+      <div class="form-group">
+        <label class="form-label">Category Name</label>
+        <input type="text" id="editTrainingCategoryName" class="form-input">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('editTrainingCategory')">Cancel</button>
+      <button class="btn btn-primary btn-full btn-lg" onclick="saveEditTrainingCategory()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal">
+    <h3 id="confirmTitle">Confirm Delete</h3>
+    <p id="confirmBody">Are you sure?</p>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-full btn-lg" onclick="closeModal('confirm')">Cancel</button>
+      <button class="btn btn-danger btn-full btn-lg" id="confirmOkBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+
+<script type="module">
+import { requireAdmin, clearSession, showToast, esc, fmtDate, fmtMoney, fsGetAll, fsGetDoc, fsAdd, fsSet, fsUpdate, fsDelete, fsQuery, getDB, writeLog, LOG_ACTIONS, loginDoctor, getSession, saveSession, getSwitchAlt, setSwitchAlt, switchAccount } from './auth.js';
+import { COLLECTIONS, getCurrentWeekRange, getWeekDays, dateKey, BONUS_CATEGORIES } from './firebase-config.js';
+import { setDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ── Theme ──────────────────────────────────────────────────
+window.applyTheme = function(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('pms-theme', t);
+  document.querySelectorAll('.icon-sun').forEach(el => el.style.display = t === 'dark' ? 'none' : 'block');
+  document.querySelectorAll('.icon-moon').forEach(el => el.style.display = t === 'dark' ? 'block' : 'none');
+};
+window.toggleTheme = function() {
+  window.applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+};
+(function(){ window.applyTheme(localStorage.getItem('pms-theme') || 'dark'); })();
+
+// ── Custom Select Logic ─────────────────────────────────────
+// The hidden native <select> stays the source of truth; the visible UI is
+// .cs-trigger + .cs-dropdown. The dropdown's inner chrome (search box +
+// scrollable list) is built ONCE per select and then reused — rebuilding it
+// would destroy the search <input> mid-typing and steal focus after every
+// keystroke.
+const CS_SEARCH_MIN = 7;   // lists longer than this get a search box
+
+function closeAllSelects() {
+  document.querySelectorAll('.custom-select.open').forEach(el => {
+    el.classList.remove('open');
+    el.classList.remove('cs-up');
+  });
+}
+
+window.initDropdowns = function() {
+  document.querySelectorAll('.custom-select').forEach(wrap => {
+    if (wrap.dataset.csInit) return;
+    wrap.dataset.csInit = '1';
+    const trigger  = wrap.querySelector('.cs-trigger');
+    const label    = wrap.querySelector('.cs-label');
+    const dropdown = wrap.querySelector('.cs-dropdown');
+    const hidden   = wrap.querySelector('select');
+    if (!trigger || !label || !dropdown || !hidden) return;
+
+    dropdown.innerHTML =
+      '<div class="cs-search-wrap"><input type="text" class="cs-search" placeholder="Search..." autocomplete="off" spellcheck="false"></div>' +
+      '<div class="cs-list" role="listbox"></div>' +
+      '<div class="cs-empty">No matches</div>';
+    const searchWrap = dropdown.querySelector('.cs-search-wrap');
+    const search     = dropdown.querySelector('.cs-search');
+    const list       = dropdown.querySelector('.cs-list');
+    const empty      = dropdown.querySelector('.cs-empty');
+
+    function syncLabel() {
+      const sel = hidden.options[hidden.selectedIndex];
+      if (sel) {
+        label.textContent = sel.text;
+        if (sel.value === '') label.classList.add('placeholder');
+        else label.classList.remove('placeholder');
+      } else {
+        label.classList.add('placeholder');
+      }
+    }
+
+    // Opt in explicitly with data-cs-search, or automatically once the list
+    // is long enough that scrolling alone would be painful.
+    function wantsSearch() {
+      return wrap.hasAttribute('data-cs-search') || hidden.options.length > CS_SEARCH_MIN;
+    }
+
+    function choose(value) {
+      hidden.value = value;
+      hidden.dispatchEvent(new Event('change', { bubbles: true }));
+      list.querySelectorAll('.cs-option').forEach(o => o.classList.toggle('selected', o.dataset.value === value));
+      syncLabel();
+      close();
+    }
+
+    function buildOptions() {
+      list.innerHTML = '';
+      const addOption = (opt) => {
+        const div = document.createElement('div');
+        div.className = 'cs-option' + (opt.selected ? ' selected' : '');
+        div.dataset.value  = opt.value;
+        div.dataset.search = opt.text.toLowerCase();
+        div.textContent = opt.text;
+        div.setAttribute('role', 'option');
+        div.addEventListener('click', (e) => { e.stopPropagation(); choose(opt.value); });
+        list.appendChild(div);
+        return div;
+      };
+      // Walk children (not .options) so <optgroup> labels render as headers
+      Array.from(hidden.children).forEach(node => {
+        if (node.tagName === 'OPTGROUP') {
+          const head = document.createElement('div');
+          head.className = 'cs-group-label';
+          head.textContent = node.label;
+          list.appendChild(head);
+          head._members = Array.from(node.children).map(addOption);
+        } else {
+          addOption(node);
+        }
+      });
+      searchWrap.style.display = wantsSearch() ? 'block' : 'none';
+    }
+
+    function visibleOptions() {
+      return Array.from(list.querySelectorAll('.cs-option')).filter(o => o.style.display !== 'none');
+    }
+
+    function filter() {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      list.querySelectorAll('.cs-option').forEach(o => {
+        const hit = !q || o.dataset.search.includes(q);
+        o.style.display = hit ? 'block' : 'none';
+        o.classList.remove('cs-active');
+        if (hit) shown++;
+      });
+      // Hide group headers whose whole group got filtered out
+      list.querySelectorAll('.cs-group-label').forEach(h => {
+        const any = (h._members || []).some(m => m.style.display !== 'none');
+        h.style.display = any ? 'block' : 'none';
+      });
+      empty.style.display = shown ? 'none' : 'block';
+      if (q) {
+        list.scrollTop = 0;
+        const first = visibleOptions()[0];
+        if (first) first.classList.add('cs-active');
+      }
+    }
+
+    function moveActive(dir) {
+      const opts = visibleOptions();
+      if (!opts.length) return;
+      let i = opts.findIndex(o => o.classList.contains('cs-active'));
+      if (i === -1) i = opts.findIndex(o => o.classList.contains('selected'));
+      i = i === -1 ? (dir > 0 ? 0 : opts.length - 1) : (i + dir + opts.length) % opts.length;
+      opts.forEach(o => o.classList.remove('cs-active'));
+      opts[i].classList.add('cs-active');
+      opts[i].scrollIntoView({ block: 'nearest' });
+    }
+
+    // Flip the panel above the trigger when there isn't room below it, so
+    // selects near the bottom of a scroll container stay usable.
+    function place() {
+      const r = trigger.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom;
+      wrap.classList.toggle('cs-up', below < 280 && r.top > below);
+    }
+
+    function open() {
+      closeAllSelects();
+      buildOptions();
+      search.value = '';
+      filter();
+      place();
+      wrap.classList.add('open');
+      const sel = list.querySelector('.cs-option.selected');
+      if (sel) sel.scrollIntoView({ block: 'nearest' });
+      if (wantsSearch()) setTimeout(() => search.focus(), 0);
+    }
+
+    function close() {
+      wrap.classList.remove('open');
+      wrap.classList.remove('cs-up');
+    }
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (wrap.classList.contains('open')) close(); else open();
+    });
+    trigger.addEventListener('keydown', (e) => {
+      if ((e.key === 'ArrowDown' || e.key === 'Enter') && !wrap.classList.contains('open')) { e.preventDefault(); open(); }
+    });
+
+    // Clicks anywhere inside the panel (search box included) must not reach
+    // the document-level "close everything" handler.
+    dropdown.addEventListener('click',     (e) => e.stopPropagation());
+    dropdown.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown')      { e.preventDefault(); moveActive(1); }
+      else if (e.key === 'ArrowUp')   { e.preventDefault(); moveActive(-1); }
+      else if (e.key === 'Enter')     {
+        e.preventDefault();
+        const t = list.querySelector('.cs-option.cs-active') || visibleOptions()[0];
+        if (t) choose(t.dataset.value);
+      }
+      else if (e.key === 'Escape')    { e.preventDefault(); close(); trigger.focus(); }
+    });
+
+    const mo = new MutationObserver(() => {
+      syncLabel();
+      if (wrap.classList.contains('open')) { buildOptions(); filter(); }
+    });
+    mo.observe(hidden, { childList: true });
+    hidden.addEventListener('change', syncLabel);
+    syncLabel();
+  });
+};
+document.addEventListener('click', closeAllSelects);
+window.addEventListener('resize', closeAllSelects);
+document.addEventListener('DOMContentLoaded', window.initDropdowns);
+if (document.readyState !== 'loading') window.initDropdowns();
+
+const session = requireAdmin();
+if (!session) throw new Error('Not admin');
+
+document.getElementById('navAdminName').textContent = session.name || session.username;
+if (session.isMaster) {
+  document.getElementById('navAdminRole').innerHTML = 'Administrator &nbsp;<span class="badge badge-bb" style="font-size:9px;padding:2px 6px;">MASTER</span>';
+  document.getElementById('tabAdmins').style.display = '';
+} else {
+  document.getElementById('navAdminRole').textContent = 'Sub-Administrator';
+}
+
+let doctors=[], bonuses=[], strikes=[], subAdmins=[], botAdmins=[];
+const DAY_NAMES=['Fri','Sat','Sun','Mon','Tue','Wed','Thu'];
+let attWeekOffset=0;
+
+function getOffsetWeekStart(offset) {
+  const {start}=getCurrentWeekRange(); const d=new Date(start); d.setDate(d.getDate()+offset*7); return d;
+}
+
+async function init() {
+  const loads=[loadDoctors(),loadBonuses(),loadStrikes()];
+  if(session.isMaster) loads.push(loadSubAdmins(), loadBotAdmins());
+  await Promise.all(loads);
+  populateDoctorSelects(); populateBonusCategories(); setDefaultDate();
+}
+
+function setDefaultDate(){document.getElementById('attDate').value=dateKey(new Date());}
+
+// The "Doctors" stat counts working doctors only — disabled accounts are excluded.
+function activeDoctorCount(){return doctors.filter(d=>!d.disabled).length;}
+function updateDoctorCount(){document.getElementById('sDoctors').textContent=activeDoctorCount();}
+
+async function loadDoctors(){doctors=await fsGetAll(COLLECTIONS.DOCTORS);updateDoctorCount();renderDoctorSidebar();}
+async function loadBonuses(){bonuses=await fsGetAll(COLLECTIONS.BONUSES);document.getElementById('sBonusPending').textContent=bonuses.filter(b=>b.status==='pending').length;renderBonusTable();refreshBonusSidebar();}
+async function loadStrikes(){strikes=await fsGetAll(COLLECTIONS.STRIKES);document.getElementById('sStrikes').textContent=strikes.length;renderStrikesTable(); if (document.getElementById('view-doctors')?.classList.contains('active')) renderDoctorDetail();}
+async function loadSubAdmins(){subAdmins=await fsGetAll(COLLECTIONS.ADMINS);document.getElementById('adminCount').textContent=subAdmins.length;renderAdminsTable();}
+
+function populateDoctorSelects(){
+  const opt=d=>`<option value="${d.id}">${esc(d.name)} (@${esc(d.username)})</option>`;
+  const activeOpts=doctors.filter(d=>!d.disabled).map(opt).join('');
+  const disabledDocs=doctors.filter(d=>d.disabled);
+  const disabledOpts=disabledDocs.length?`<optgroup label="Disabled">${disabledDocs.map(opt).join('')}</optgroup>`:'';
+  ['attDoctor','viewAttDoctor','bonusDoctor','strikeDoctor','inlineBonusDoctor'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=`<option value="">Select doctor...</option>`+activeOpts+disabledOpts;});
+}
+function populateBonusCategories(){
+  const html = BONUS_CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('');
+  ['bonusCat','inlineBonusCat'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=html;});
+}
+
+function renderDoctorsList(){
+  // Legacy flat-list kept for any external callers; now delegates to the sidebar.
+  renderDoctorSidebar();
+}
+
+// ── DOCTOR SIDEBAR (admin) ─────────────────────────────────
+let currentDoctorId = null;
+let currentDoctorTab = 'profile';
+let doctorSearch = '';
+let doctorListTab = 'active';   // 'active' | 'disabled' — the two doctor lists are separate tabs
+let doctorAttWeekOffset = 0; // week offset for the doctor detail Attendance tab
+
+function doctorBonusCount(doctorId) { return bonuses.filter(b => b.doctorId === doctorId).length; }
+function doctorStrikeCount(doctorId) { return strikes.filter(s => s.doctorId === doctorId).length; }
+function doctorHasAttendance(doctorId) {
+  // best-effort: we always show the tab; data loads on click
+  return true;
+}
+
+function renderDoctorSidebar() {
+  renderDoctorSide();
+  renderDoctorDetail();
+}
+
+function renderDoctorSide() {
+  const el = document.getElementById('doctorsSide');
+  if (!el) return;
+  const activeTotal   = doctors.filter(d => !d.disabled).length;
+  const disabledTotal = doctors.filter(d =>  d.disabled).length;
+
+  // The chrome (tab bar + search box) is built exactly ONCE. Re-creating the
+  // <input> on every keystroke — which is what this used to do — destroys the
+  // element being typed into and drops focus after each character.
+  if (!el.dataset.built) {
+    el.dataset.built = '1';
+    el.classList.add('side-shell');
+    el.innerHTML = `
+      <div class="side-tabs">
+        <button class="side-tab" data-list="active" type="button">All<span class="side-tab-count" id="dstActive">0</span></button>
+        <button class="side-tab" data-list="disabled" type="button">Disabled<span class="side-tab-count" id="dstDisabled">0</span></button>
+      </div>
+      <input type="text" class="bonus-doctor-search" id="doctorSearch" placeholder="Search doctor..." autocomplete="off" spellcheck="false">
+      <div class="side-list" id="doctorsList"></div>`;
+    const search = el.querySelector('#doctorSearch');
+    search.addEventListener('input', () => { doctorSearch = search.value; renderDoctorSideList(); });
+    search.addEventListener('click', (e) => e.stopPropagation());
+    el.querySelectorAll('.side-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (doctorListTab === btn.dataset.list) return;
+        doctorListTab = btn.dataset.list;
+        renderDoctorSide();
+      });
+    });
+  }
+
+  el.querySelector('#dstActive').textContent   = activeTotal;
+  el.querySelector('#dstDisabled').textContent = disabledTotal;
+  el.querySelectorAll('.side-tab').forEach(b => b.classList.toggle('active', b.dataset.list === doctorListTab));
+  renderDoctorSideList();
+}
+
+// Only the list region is re-rendered, so the search box keeps focus.
+function renderDoctorSideList() {
+  const list = document.getElementById('doctorsList');
+  if (!list) return;
+  const q = doctorSearch.trim().toLowerCase();
+  const match = d => !q || d.name.toLowerCase().includes(q) || (d.username || '').toLowerCase().includes(q);
+  const wantDisabled = doctorListTab === 'disabled';
+  const shown = [...doctors]
+    .filter(d => !!d.disabled === wantDisabled && match(d))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const sideItem = (d) => {
+    const isTrainer = d.role === 'trainer';
+    return `
+      <button class="bonus-side-item ${currentDoctorId===d.id?'active':''}" data-doctor-id="${d.id}" ${d.disabled?'style="opacity:.6;"':''}>
+        <span class="icon-slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;display:flex;align-items:center;gap:6px;">
+          <span style="overflow:hidden;text-overflow:ellipsis;">${esc(d.name)}</span>
+          ${isTrainer ? '<span class="badge-trainer">Trainer</span>' : ''}
+        </span>
+        <span class="bonus-side-count">${doctorBonusCount(d.id) + doctorStrikeCount(d.id)}</span>
+      </button>`;
+  };
+
+  const emptyMsg = q
+    ? 'No doctors match that search.'
+    : (wantDisabled ? 'No disabled doctors.' : 'No doctors yet.');
+  list.innerHTML = shown.length === 0
+    ? `<div class="bonus-detail-empty" style="padding:24px 16px;margin:4px;">${emptyMsg}</div>`
+    : shown.map(sideItem).join('');
+
+  list.querySelectorAll('.bonus-side-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentDoctorId = btn.dataset.doctorId;
+      currentDoctorTab = 'profile';
+      doctorAttWeekOffset = 0; // reset week on doctor switch
+      renderDoctorSideList();
+      renderDoctorDetail();
+    });
+  });
+}
+
+function renderDoctorDetail() {
+  const el = document.getElementById('doctorDetail');
+  if (!el) return;
+  if (!currentDoctorId) {
+    el.innerHTML = `
+      <div class="bonus-detail-head">
+        <div>
+          <div class="bonus-detail-title">Select a doctor</div>
+          <div class="bonus-detail-sub">Pick a doctor from the list to see their profile, bonuses, strikes, and attendance.</div>
+        </div>
+      </div>
+      <div class="bonus-detail-empty">
+        <div class="icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+        Choose a doctor from the left to begin.
+      </div>`;
+    return;
+  }
+  const d = doctors.find(x => x.id === currentDoctorId);
+  if (!d) {
+    el.innerHTML = '<div class="bonus-detail-empty">Doctor not found.</div>';
+    return;
+  }
+  const isTrainer = d.role === 'trainer';
+  el.innerHTML = `
+    <div class="doctor-profile-card">
+      <div class="doctor-profile-avatar">${esc((d.name || '?').charAt(0).toUpperCase())}</div>
+      <div class="doctor-profile-info">
+        <div class="doctor-profile-name">
+          <span>${esc(d.name)}</span>
+          ${isTrainer ? '<span class="badge-trainer">Trainer</span>' : ''}
+          ${d.disabled ? '<span class="badge badge-red">Disabled</span>' : '<span class="badge badge-green">Active</span>'}
+        </div>
+        <div class="doctor-profile-meta">@${esc(d.username)} &middot; Created ${fmtDate(d.createdAt)}</div>
+      </div>
+      <div class="doctor-profile-actions">
+        <button class="btn btn-sm btn-outline" onclick="openEditDoctor('${d.id}')">Edit</button>
+        <button class="btn btn-sm ${d.disabled?'btn-success':'btn-outline'}" onclick="toggleDoctor('${d.id}',${!!d.disabled})">${d.disabled?'Enable':'Disable'}</button>
+        <button class="btn btn-sm ${isTrainer?'btn-danger':'btn-dark'}" onclick="toggleDoctorTrainer('${d.id}',${!!isTrainer})">${isTrainer?'Remove Trainer':'Set as Trainer'}</button>
+        <button class="btn btn-sm btn-danger" onclick="confirmDelete('doctor','${d.id}','${esc(d.name)}')">Delete</button>
+      </div>
+    </div>
+    <div class="subtab-bar" id="doctorSubtabBar">
+      <button class="subtab ${currentDoctorTab==='profile'?'active':''}" data-sub="profile">Profile</button>
+      <button class="subtab ${currentDoctorTab==='bonuses'?'active':''}" data-sub="bonuses">Bonuses (${doctorBonusCount(d.id)})</button>
+      <button class="subtab ${currentDoctorTab==='strikes'?'active':''}" data-sub="strikes">Strikes (${doctorStrikeCount(d.id)})</button>
+      <button class="subtab ${currentDoctorTab==='attendance'?'active':''}" data-sub="attendance">Attendance</button>
+    </div>
+    <div id="doctorSubtabContent">${renderDoctorSubtab(d, currentDoctorTab)}</div>
+  `;
+  el.querySelectorAll('.subtab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentDoctorTab = btn.dataset.sub;
+      renderDoctorDetail();
+    });
+  });
+  // wire inline bonus actions in the doctor Bonuses sub-tab
+  el.querySelectorAll('#doctorSubtabContent [data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id, act = btn.dataset.action;
+      if (act === 'pay')    markBonusPaid(id);
+      if (act === 'edit')   openEditBonus(id);
+      if (act === 'delete') confirmDelete('bonus', id, 'bonus');
+    });
+  });
+}
+
+function renderDoctorSubtab(d, tab) {
+  if (tab === 'profile') {
+    const totalPaid = bonuses.filter(b => b.doctorId === d.id && b.status === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+    const totalPending = bonuses.filter(b => b.doctorId === d.id && b.status !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+    return `
+      <div class="doctor-stats-row">
+        <div class="doctor-stat-mini"><div class="num">${doctorBonusCount(d.id)}</div><div class="lbl">Total Bonuses</div></div>
+        <div class="doctor-stat-mini"><div class="num">${fmtMoney(totalPaid)}</div><div class="lbl">Paid</div></div>
+        <div class="doctor-stat-mini"><div class="num">${fmtMoney(totalPending)}</div><div class="lbl">Pending</div></div>
+        <div class="doctor-stat-mini"><div class="num">${doctorStrikeCount(d.id)}</div><div class="lbl">Strikes</div></div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="profile-row"><span class="lbl">Full Name</span><span class="val">${esc(d.name)}</span></div>
+          <div class="profile-row"><span class="lbl">Username</span><span class="val">@${esc(d.username)}</span></div>
+          <div class="profile-row"><span class="lbl">Role</span><span class="val">${d.role === 'trainer' ? 'Trainer' : 'Doctor'}</span></div>
+          <div class="profile-row"><span class="lbl">Status</span><span class="val">${d.disabled ? 'Disabled' : 'Active'}</span></div>
+          <div class="profile-row"><span class="lbl">Discord ID</span><span class="val">${d.discordId ? esc(d.discordId) : '<span style="color:var(--color-graphite)">— not set —</span>'}</span></div>
+          <div class="profile-row"><span class="lbl">Created</span><span class="val">${fmtDate(d.createdAt)}</span></div>
+        </div>
+      </div>
+    `;
+  }
+  if (tab === 'bonuses') {
+    const recs = bonuses.filter(b => b.doctorId === d.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    if (!recs.length) return '<div class="bonus-detail-empty">No bonuses for this doctor yet.</div>';
+    return '<div class="card"><div class="card-body">' + recs.map(r => `
+      <div class="bonus-history-row">
+        <div class="bonus-history-date">${fmtDate(r.createdAt)}</div>
+        <div class="bonus-history-body">
+          <div class="bonus-history-note">${esc(r.note || '—')}</div>
+          <div class="bonus-history-cat">${esc(r.category)} &middot; <span class="bonus-history-status ${r.status==='paid'?'paid':'pending'}">${r.status==='paid'?'Paid':'Pending'}</span></div>
+        </div>
+        <div class="bonus-history-amount">${fmtMoney(r.amount)}</div>
+        <div class="bonus-history-actions">
+          ${r.status!=='paid'?`<button class="icon-btn success" data-action="pay" data-id="${r.id}" title="Mark as paid"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></button>`:''}
+          <button class="icon-btn" data-action="edit" data-id="${r.id}" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="icon-btn danger" data-action="delete" data-id="${r.id}" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+        </div>
+      </div>`).join('') + '</div></div>';
+  }
+  if (tab === 'strikes') {
+    const recs = strikes.filter(s => s.doctorId === d.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    if (!recs.length) return '<div class="bonus-detail-empty">No strikes on record.</div>';
+    return '<div class="card"><div class="card-body">' + recs.map(s => `
+      <div class="strike-item"><div class="strike-dot"></div>
+        <div><div style="font-weight:600;color:var(--color-ink)">${esc(s.reason)}</div><div class="text-sm text-muted mt-4">${fmtDate(s.createdAt)}</div></div>
+      </div>`).join('') + '</div></div>';
+  }
+  if (tab === 'attendance') {
+    // Render after the outerHTML is in place
+    setTimeout(() => renderDoctorAttendance(d.id), 0);
+    return `<div id="doctorAttendanceView">
+      <div class="week-nav" style="margin:12px 0 8px">
+        <button class="week-nav-btn" id="docAttPrev" onclick="changeDoctorAttWeek(-1)" aria-label="Previous week">&#8249;</button>
+        <div class="week-nav-label" id="docAttWeekLabel"><div class="skeleton" style="height:14px;width:180px;margin:0 auto"></div></div>
+        <button class="week-nav-btn" id="docAttNext" onclick="changeDoctorAttWeek(1)" aria-label="Next week" disabled>&#8250;</button>
+      </div>
+      <div class="skeleton-grid">`+Array.from({length:7},()=>'<div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>').join('')+`</div>
+    </div>`;
+  }
+  return '';
+}
+
+window.changeDoctorAttWeek = function(dir) {
+  const newOffset = doctorAttWeekOffset + dir;
+  if (newOffset > 0) return;
+  doctorAttWeekOffset = newOffset;
+  if (currentDoctorId) renderDoctorAttendance(currentDoctorId);
+};
+
+async function renderDoctorAttendance(doctorId) {
+  const area = document.getElementById('doctorAttendanceView');
+  if (!area) return;
+  try {
+    const records = await fsQuery(COLLECTIONS.ATTENDANCE, 'doctorId', '==', doctorId);
+    const map = {}; records.forEach(r => { map[r.dateKey] = r; });
+
+    // Compute week start with offset
+    const baseStart = getCurrentWeekRange().start;
+    const weekStart = new Date(baseStart);
+    weekStart.setDate(weekStart.getDate() + doctorAttWeekOffset * 7);
+    const days = getWeekDays(weekStart);
+    const label = `${days[0].toLocaleDateString('en-US',{day:'numeric',month:'short'})} \u2013 ${days[6].toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'})}`;
+    const today = dateKey(new Date());
+    let present=0,absent=0,late=0,off=0,totalMins=0;
+    const cells = days.map((d, i) => {
+      const dk = dateKey(d), rec = map[dk], st = rec ? rec.status : 'unmarked';
+      const lbl = {present:'Present',absent:'Absent',late:'Late',off:'Day Off',unmarked:'\u2014'}[st];
+      if (st==='present') present++;
+      else if (st==='absent') absent++;
+      else if (st==='late') late++;
+      else if (st==='off') off++;
+      let durHtml = '';
+      if (rec && (st==='present'||st==='late') && (rec.hours||rec.minutes)) {
+        const h = Number(rec.hours)||0, m = Number(rec.minutes)||0;
+        totalMins += h*60+m;
+        durHtml = `<div class="day-hours">${h}h ${m}m</div>`;
+      }
+      return `<div class="day-cell ${st!=='unmarked'?st:''} ${dk===today?'today':''}">
+        <div class="day-name">${DAY_NAMES[i]}</div>
+        <div class="day-date">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+        <div class="day-status">${lbl}</div>${durHtml}</div>`;
+    }).join('');
+    const totalH = Math.floor(totalMins/60), totalM = totalMins%60;
+
+    // Update the persistent nav bar controls
+    const labelEl = document.getElementById('docAttWeekLabel');
+    const nextBtn  = document.getElementById('docAttNext');
+    if (labelEl) labelEl.textContent = label;
+    if (nextBtn)  nextBtn.disabled = doctorAttWeekOffset >= 0;
+
+    // Remove the initial skeleton-grid placeholder now that real data is ready
+    const skeletonGrid = area.querySelector('.skeleton-grid');
+    if (skeletonGrid) skeletonGrid.remove();
+
+    // Inject (or update) content below the nav
+    let contentArea = area.querySelector('#docAttContent');
+    if (!contentArea) {
+      contentArea = document.createElement('div');
+      contentArea.id = 'docAttContent';
+      area.appendChild(contentArea);
+    }
+    contentArea.innerHTML = `
+      <div class="week-grid mb-24">${cells}</div>
+      <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(100px,1fr));">
+        <div class="stat-card green"><div class="stat-num">${present}</div><div class="stat-lbl">Present</div></div>
+        <div class="stat-card red"><div class="stat-num">${absent}</div><div class="stat-lbl">Absent</div></div>
+        <div class="stat-card"><div class="stat-num" style="color:var(--color-warning)">${late}</div><div class="stat-lbl">Late</div></div>
+        <div class="stat-card"><div class="stat-num">${off}</div><div class="stat-lbl">Day Off</div></div>
+        <div class="stat-card accent"><div class="stat-num" style="font-size:20px;margin-top:4px;">${totalH}h ${totalM}m</div><div class="stat-lbl">Total Hours</div></div>
+      </div>
+    `;
+  } catch (e) {
+    const a = document.getElementById('doctorAttendanceView');
+    if (a) a.innerHTML = '<div class="bonus-detail-empty color-danger">Failed to load attendance.</div>';
+  }
+}
+
+window.toggleDoctorTrainer = async function(id, currentlyTrainer) {
+  const d = doctors.find(x => x.id === id);
+  if (!d) return;
+  const newRole = currentlyTrainer ? 'doctor' : 'trainer';
+  try {
+    await fsUpdate(COLLECTIONS.DOCTORS, id, { role: newRole });
+    d.role = newRole;
+    await writeLog(LOG_ACTIONS.DOCTOR_ROLE_CHANGE, { targetId: id, targetName: d.name, newRole });
+    showToast(currentlyTrainer ? `Trainer role removed from ${d.name}.` : `${d.name} is now a Trainer.`, 'success');
+    renderDoctorSidebar();
+  } catch (e) { showToast('Failed to update role.', 'error'); }
+};
+
+
+window.addDoctor=async function(){
+  const name=document.getElementById('newDocName').value.trim(),user=document.getElementById('newDocUser').value.trim(),pass=document.getElementById('newDocPass').value,discordId=document.getElementById('newDocDiscord').value.trim(),btn=document.getElementById('addDocBtn');
+  if(!name||!user||!pass){showToast('All fields are required.','error');return;}
+  if(doctors.some(d=>d.username===user)){showToast('Username already exists.','error');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Creating...';
+  try{
+    const docData={name,username:user,password:pass,disabled:false,createdAt:new Date().toISOString()};
+    if(discordId){
+      docData.discordId=discordId;
+      docData.welcomeDmSent=false;   // selfbot will pick this up and DM the doctor
+      docData.plainPassword=pass;    // selfbot reads this to include in the DM
+      docData.createdBy=session.username; // selfbot uses this to notify the right admin on failure
+    }
+    const id=await fsAdd(COLLECTIONS.DOCTORS,docData);
+    doctors.push({id,...docData});renderDoctorsList();populateDoctorSelects();
+    updateDoctorCount();
+    await writeLog(LOG_ACTIONS.DOCTOR_CREATE,{targetName:name,targetUsername:user});
+    showToast(`Doctor "${name}" created.`+(discordId?' DM will be sent via selfbot.':''),'success');closeModal('addDoctor');
+    ['newDocName','newDocUser','newDocPass','newDocDiscord'].forEach(i=>document.getElementById(i).value='');
+  }catch(e){showToast('Failed to create doctor.','error');}
+  btn.disabled=false;btn.innerHTML='Create Account';
+};
+
+window.toggleDoctor=async function(id,currentlyDisabled){
+  try{
+    await fsUpdate(COLLECTIONS.DOCTORS,id,{disabled:!currentlyDisabled});
+    const d=doctors.find(d=>d.id===id);if(d)d.disabled=!currentlyDisabled;
+    // Follow the doctor into whichever list they just moved to, so the open
+    // profile doesn't end up selected on a tab that no longer contains them.
+    doctorListTab=currentlyDisabled?'active':'disabled';
+    updateDoctorCount();renderDoctorsList();populateDoctorSelects();
+    showToast(currentlyDisabled?'Doctor enabled.':'Doctor disabled.','info');
+  }catch(e){showToast('Failed.','error');}
+};
+
+window.openEditDoctor=function(id){
+  const d=doctors.find(d=>d.id===id);if(!d)return;
+  document.getElementById('editDocId').value=id;document.getElementById('editDocName').value=d.name||'';document.getElementById('editDocUser').value=d.username||'';document.getElementById('editDocPass').value='';document.getElementById('editDocDiscord').value=d.discordId||'';
+  openModal('editDoctor');
+};
+
+window.saveEditDoctor=async function(){
+  const id=document.getElementById('editDocId').value,name=document.getElementById('editDocName').value.trim(),user=document.getElementById('editDocUser').value.trim(),pass=document.getElementById('editDocPass').value,discordId=document.getElementById('editDocDiscord').value.trim(),btn=document.getElementById('editDocBtn');
+  if(!name||!user){showToast('Name and username are required.','error');return;}
+  if(doctors.some(d=>d.id!==id&&d.username===user)){showToast('Username already taken.','error');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Saving...';
+  try{
+    const updates={name,username:user,discordId:discordId||''};if(pass)updates.password=pass;
+    await fsUpdate(COLLECTIONS.DOCTORS,id,updates);const d=doctors.find(d=>d.id===id);if(d)Object.assign(d,updates);
+    renderDoctorsList();populateDoctorSelects();showToast(`"${name}" updated.`,'success');closeModal('editDoctor');
+  }catch(e){showToast('Failed.','error');}
+  btn.disabled=false;btn.innerHTML='Save Changes';
+};
+
+window.toggleHoursField=function(){
+  const show=document.getElementById('attStatus').value==='present'||document.getElementById('attStatus').value==='late';
+  ['hoursGroup','minsGroup','durationPreview'].forEach(id=>document.getElementById(id).style.display=show?'':'none');
+};
+
+function updateDurationDisplay(){
+  const h=parseInt(document.getElementById('attHours').value)||0,m=parseInt(document.getElementById('attMins').value)||0;
+  document.getElementById('durationDisplay').textContent=`${h}h ${m}m`;
+}
+
+window.markAttendance=async function(){
+  const doctorId=document.getElementById('attDoctor').value,date=document.getElementById('attDate').value,status=document.getElementById('attStatus').value,btn=document.getElementById('attBtn');
+  if(!doctorId||!date){showToast('Select a doctor and date.','error');return;}
+  const trackHours=status==='present'||status==='late';
+  const hours=trackHours?(parseInt(document.getElementById('attHours').value)||0):0;
+  const minutes=trackHours?(parseInt(document.getElementById('attMins').value)||0):0;
+  if(trackHours&&hours===0&&minutes===0){showToast('Enter hours worked.','error');return;}
+  if(minutes>59){showToast('Minutes must be 0-59.','error');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner spinner-light"></span>Saving...';
+  try{
+    const db=getDB(),key=`${doctorId}_${date}`;
+    await setDoc(doc(db,COLLECTIONS.ATTENDANCE,key),{doctorId,dateKey:date,status,hours,minutes,markedAt:new Date().toISOString()});
+    const attDoc=doctors.find(d=>d.id===doctorId);
+    await writeLog(LOG_ACTIONS.ATTENDANCE_MARK,{targetId:doctorId,targetName:attDoc?.name||doctorId,date,status,hours,minutes});
+    showToast(`Attendance marked as "${status}".`,'success');
+    document.getElementById('attHours').value='';document.getElementById('attMins').value='';updateDurationDisplay();
+    if(document.getElementById('viewAttDoctor').value===doctorId){attWeekOffset=0;loadDoctorAttendance();}
+  }catch(e){showToast('Failed to save.','error');}
+  btn.disabled=false;btn.innerHTML='Mark Attendance';
+};
+
+window.resetAttWeek=function(){attWeekOffset=0;loadDoctorAttendance();};
+window.changeAttWeek=function(dir){const n=attWeekOffset+dir;if(n>0)return;attWeekOffset=n;loadDoctorAttendance();};
+
+window.loadDoctorAttendance=async function(){
+  const doctorId=document.getElementById('viewAttDoctor').value,area=document.getElementById('attViewArea'),navEl=document.getElementById('attWeekNav');
+  if(!doctorId){area.innerHTML='<div class="hint-box">Select a doctor to view their attendance</div>';navEl.style.display='none';return;}
+  navEl.style.display='flex';
+  const weekStart=getOffsetWeekStart(attWeekOffset),days=getWeekDays(weekStart);
+  const label=`${days[0].toLocaleDateString('en-US',{day:'numeric',month:'short'})} – ${days[6].toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'})}`;
+  document.getElementById('attWeekLabel').textContent=label;document.getElementById('attWeekNext').disabled=attWeekOffset>=0;
+  area.innerHTML='<div class="skeleton-grid" style="margin-top:8px">'+Array.from({length:7},()=>'<div class="skeleton-day"><div class="skeleton" style="width:32px;height:12px"></div><div class="skeleton" style="width:48px;height:18px"></div><div class="skeleton" style="width:60px;height:22px;border-radius:999px"></div></div>').join('')+'</div>';
+  try{
+    const records=await fsQuery(COLLECTIONS.ATTENDANCE,'doctorId','==',doctorId);
+    const fullMap={};records.forEach(r=>{fullMap[r.dateKey]=r;});
+    const today=dateKey(new Date()),doctor=doctors.find(d=>d.id===doctorId);
+    let present=0,absent=0,late=0,off=0,totalMins=0;
+    const cells=days.map(function(d,i){
+      const dk=dateKey(d),rec=fullMap[dk],st=rec?rec.status:'unmarked';
+      const lbl={present:'Present',absent:'Absent',late:'Late',off:'Day Off',unmarked:'—'}[st];
+      if(st==='present')present++;else if(st==='absent')absent++;else if(st==='late')late++;else if(st==='off')off++;
+      let durHtml='';
+      if(rec&&(st==='present'||st==='late')&&(rec.hours||rec.minutes)){const h=Number(rec.hours)||0,m=Number(rec.minutes)||0;totalMins+=h*60+m;durHtml='<div class="day-hours">'+h+'h '+m+'m</div>';}
+      const cls=['day-cell',st!=='unmarked'?st:'',dk===today?'today':''].filter(Boolean).join(' ');
+      return '<div class="'+cls+'"><div class="day-name">'+DAY_NAMES[i]+'</div><div class="day-date">'+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div><div class="day-status">'+lbl+'</div>'+durHtml+'</div>';
+    });
+    const totalH=Math.floor(totalMins/60),totalM=totalMins%60;
+    area.innerHTML='<div class="att-doctor-name">'+esc(doctor?doctor.name:'Doctor')+'</div>'
+      +'<div class="week-grid mb-24">'+cells.join('')+'</div>'
+      +'<div class="stats-row"><div class="stat-card green"><div class="stat-num">'+present+'</div><div class="stat-lbl">Present</div></div>'
+      +'<div class="stat-card red"><div class="stat-num">'+absent+'</div><div class="stat-lbl">Absent</div></div>'
+      +'<div class="stat-card"><div class="stat-num" style="color:var(--color-warning)">'+late+'</div><div class="stat-lbl">Late</div></div>'
+      +'<div class="stat-card"><div class="stat-num">'+off+'</div><div class="stat-lbl">Day Off</div></div>'
+      +'<div class="stat-card accent"><div class="stat-num" style="font-size:20px;margin-top:4px;">'+totalH+'h '+totalM+'m</div><div class="stat-lbl">Total Hours</div></div></div>';
+  }catch(err){area.innerHTML='<div class="hint-box color-danger">Error loading attendance.</div>';}
+};
+
+window.addBonus=async function(){
+  const doctorId=document.getElementById('bonusDoctor').value,category=document.getElementById('bonusCat').value,note=document.getElementById('bonusNote').value.trim(),amount=parseFloat(document.getElementById('bonusAmt').value),status=document.getElementById('bonusStatus').value,btn=document.getElementById('addBonusBtn');
+  if(!doctorId||!amount||amount<=0){showToast('Doctor and valid amount are required.','error');return;}
+  const doctor=doctors.find(d=>d.id===doctorId);btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Adding...';
+  try{
+    const entry={doctorId,doctorName:doctor?.name||'',category,note,amount,status,createdAt:new Date().toISOString()};
+    const id=await fsAdd(COLLECTIONS.BONUSES,entry);bonuses.push({id,...entry});renderBonusTable();refreshBonusSidebar();
+    document.getElementById('sBonusPending').textContent=bonuses.filter(b=>b.status==='pending').length;
+    await writeLog(LOG_ACTIONS.BONUS_ADD,{targetId:doctorId,targetName:doctor?.name||'',category,amount,status});
+    showToast(`Bonus of $${amount} added.`,'success');closeModal('addBonus');
+    ['bonusNote','bonusAmt'].forEach(i=>document.getElementById(i).value='');
+  }catch(e){showToast('Failed.','error');}
+  btn.disabled=false;btn.innerHTML='Add Bonus';
+};
+
+function renderBonusTable(){
+  // Legacy flat-table render — the bonus view now uses the sidebar layout
+  // (renderBonusLayout). We still update the totals + record-count chip
+  // here for the old table header, but skip the table body since the
+  // element no longer exists in the DOM.
+  const cnt = document.getElementById('bonusTableCount');
+  if (cnt) cnt.textContent = bonuses.length + ' records';
+  let grandTotal=0,pendingTotal=0;
+  bonuses.forEach(b=>{const a=parseFloat(b.amount)||0;grandTotal+=a;if(b.status!=='paid')pendingTotal+=a;});
+  const tEl=document.getElementById('adminTotalBonus');const pEl=document.getElementById('adminPendingBonus');
+  if(tEl)tEl.textContent=fmtMoney(grandTotal);if(pEl)pEl.textContent=fmtMoney(pendingTotal);
+  const tbody=document.getElementById('bonusTable');
+  if(!tbody) return; // sidebar layout has replaced the flat table
+  if(!bonuses.length){tbody.innerHTML='<tr class="tbl-empty"><td colspan="7">No bonus records yet.</td></tr>';return;}
+  const sorted=[...bonuses].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  tbody.innerHTML=sorted.map(b=>`<tr>
+    <td><strong class="table-strong">${esc(b.doctorName||'—')}</strong></td>
+    <td><span class="badge badge-bb">${esc(b.category)}</span></td>
+    <td class="table-subtext">${b.note?esc(b.note):'—'}</td>
+    <td><span class="table-amount">${fmtMoney(b.amount)}</span></td>
+    <td><span class="badge ${b.status==='paid'?'badge-green':'badge-orange'}">${b.status==='paid'?'Paid':'Pending'}</span></td>
+    <td class="table-meta">${fmtDate(b.createdAt)}</td>
+    <td><div class="bonus-actions">${b.status!=='paid'?`<button class="btn btn-sm btn-success" onclick="markBonusPaid('${b.id}')">Mark Paid</button>`:''}<button class="btn btn-sm btn-danger" onclick="confirmDelete('bonus','${b.id}','bonus')">Delete</button></div></td>
+  </tr>`).join('');
+}
+
+window.markBonusPaid=async function(id){
+  try{await fsUpdate(COLLECTIONS.BONUSES,id,{status:'paid'});const b=bonuses.find(b=>b.id===id);if(b)b.status='paid';renderBonusTable();refreshBonusSidebar();document.getElementById('sBonusPending').textContent=bonuses.filter(b=>b.status==='pending').length;showToast('Bonus marked as paid.','success');}catch(e){showToast('Failed.','error');}
+};
+
+// ── BONUS SIDEBAR (Add Bonus / Paid / Pending by doctor) ──
+let currentBonusTab = 'paid';      // 'add' | 'paid' | 'pending'
+let currentBonusDoctorId = null;
+let bonusDoctorFilter = '';
+
+function bonusCountByStatus(status) {
+  if (status === 'all')     return bonuses.length;
+  if (status === 'paid')    return bonuses.filter(b => b.status === 'paid').length;
+  if (status === 'pending') return bonuses.filter(b => b.status !== 'paid').length;
+  return 0;
+}
+
+function bonusCountForDoctor(doctorId, status) {
+  if (status === 'all')     return bonuses.filter(b => b.doctorId === doctorId).length;
+  if (status === 'paid')    return bonuses.filter(b => b.doctorId === doctorId && b.status === 'paid').length;
+  if (status === 'pending') return bonuses.filter(b => b.doctorId === doctorId && b.status !== 'paid').length;
+  return 0;
+}
+
+function bonusDoctorsWithBonuses() {
+  // doctors who have at least one bonus matching the current tab's status
+  return doctors
+    .map(d => {
+      const count = bonusCountForDoctor(d.id, currentBonusTab);
+      return { ...d, count };
+    })
+    .filter(d => d.count > 0 || currentBonusTab !== 'pending') // always show all in paid too
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+window.refreshBonusSidebar = function() {
+  // Called after any bonus mutation. Updates the bonus-table-count chip,
+  // re-renders totals, and the sidebar panes.
+  const cnt = document.getElementById('bonusTableCount');
+  if (cnt) cnt.textContent = bonuses.length + ' records';
+  let grand = 0, pending = 0;
+  bonuses.forEach(b => { const a = parseFloat(b.amount) || 0; grand += a; if (b.status !== 'paid') pending += a; });
+  const tEl = document.getElementById('adminTotalBonus');
+  const pEl = document.getElementById('adminPendingBonus');
+  if (tEl) tEl.textContent = fmtMoney(grand);
+  if (pEl) pEl.textContent = fmtMoney(pending);
+  if (document.getElementById('view-bonuses').classList.contains('active')) {
+    renderBonusLayout();
+  }
+  // If the doctor sidebar's Bonuses sub-tab is open, refresh it too
+  if (document.getElementById('view-doctors')?.classList.contains('active') && currentDoctorTab === 'bonuses') {
+    renderDoctorDetail();
+  } else {
+    renderDoctorSide();
+  }
+};
+
+function renderBonusLayout() {
+  renderBonusOuterSide();
+  renderBonusInnerSide();
+  renderBonusDetail();
+}
+
+function renderBonusOuterSide() {
+  const el = document.getElementById('bonusOuterSide');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="bonus-side-title">Bonus Manager</div>
+    <button class="bonus-side-item ${currentBonusTab==='add'?'active':''}" data-tab="add">
+      <span class="icon-slot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      <span>Add Bonus</span>
+    </button>
+    <button class="bonus-side-item ${currentBonusTab==='paid'?'active':''}" data-tab="paid">
+      <span class="icon-slot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>
+      <span>Paid Bonuses</span>
+      <span class="bonus-side-count">${bonusCountByStatus('paid')}</span>
+    </button>
+    <button class="bonus-side-item ${currentBonusTab==='pending'?'active':''}" data-tab="pending">
+      <span class="icon-slot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+      <span>Pending</span>
+      <span class="bonus-side-count">${bonusCountByStatus('pending')}</span>
+    </button>
+  `;
+  el.querySelectorAll('.bonus-side-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentBonusTab = btn.dataset.tab;
+      currentBonusDoctorId = null;
+      bonusDoctorFilter = '';
+      renderBonusLayout();
+    });
+  });
+}
+
+function renderBonusInnerSide() {
+  const el = document.getElementById('bonusInnerSide');
+  if (!el) return;
+  if (currentBonusTab === 'add') { el.innerHTML = ''; el.dataset.built = ''; el.classList.remove('side-shell'); el.classList.add('hide-mobile'); return; }
+  el.classList.remove('hide-mobile');
+
+  // Same rule as the doctors sidebar: build the search box once so typing
+  // into it doesn't destroy it and lose focus mid-word.
+  if (!el.dataset.built) {
+    el.dataset.built = '1';
+    el.classList.add('side-shell');
+    el.innerHTML = `
+      <div class="bonus-side-title">Doctors</div>
+      <input type="text" class="bonus-doctor-search" id="bonusDoctorSearch" placeholder="Search doctor..." autocomplete="off" spellcheck="false">
+      <div class="side-list" id="bonusDoctorList"></div>`;
+    const search = el.querySelector('#bonusDoctorSearch');
+    search.addEventListener('input', () => { bonusDoctorFilter = search.value; renderBonusDoctorList(); });
+    search.addEventListener('click', (e) => e.stopPropagation());
+  } else {
+    const search = el.querySelector('#bonusDoctorSearch');
+    if (search && search.value !== bonusDoctorFilter) search.value = bonusDoctorFilter;
+  }
+  renderBonusDoctorList();
+}
+
+function renderBonusDoctorList() {
+  const list = document.getElementById('bonusDoctorList');
+  if (!list) return;
+  const q = bonusDoctorFilter.trim().toLowerCase();
+  const filtered = bonusDoctorsWithBonuses().filter(d => !q || d.name.toLowerCase().includes(q));
+  list.innerHTML = filtered.length === 0
+    ? '<div class="bonus-detail-empty" style="padding:24px 16px;margin:4px;">No doctors found.</div>'
+    : filtered.map(d => `
+        <button class="bonus-side-item ${currentBonusDoctorId===d.id?'active':''}" data-doctor-id="${d.id}">
+          <span class="icon-slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(d.name)}</span>
+          <span class="bonus-side-count">${d.count}</span>
+        </button>`).join('');
+  list.querySelectorAll('.bonus-side-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentBonusDoctorId = btn.dataset.doctorId;
+      renderBonusDoctorList();
+      renderBonusDetail();
+    });
+  });
+}
+
+function renderBonusDetail() {
+  const el = document.getElementById('bonusDetail');
+  if (!el) return;
+  if (currentBonusTab === 'add') {
+    // Render the form first (this creates fresh <select> elements), THEN
+    // populate those selects with doctors / categories. Order matters —
+    // populating before the innerHTML assignment would wipe the data.
+    el.innerHTML = renderBonusAddForm();
+    populateDoctorSelects();
+    populateBonusCategories();
+    // wire the inline add form
+    const btn = document.getElementById('inlineAddBonusBtn');
+    if (btn) btn.addEventListener('click', addBonusInline);
+    // re-init the custom-selects we just injected
+    if (typeof window.initDropdowns === 'function') window.initDropdowns();
+    return;
+  }
+  if (!currentBonusDoctorId) {
+    el.innerHTML = `
+      <div class="bonus-detail-head">
+        <div>
+          <div class="bonus-detail-title">${currentBonusTab === 'paid' ? 'Paid' : 'Pending'} Bonuses</div>
+          <div class="bonus-detail-sub">Select a doctor to view their bonus history.</div>
+        </div>
+      </div>
+      <div class="bonus-detail-empty">
+        <div class="icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+        Choose a doctor from the list to see their bonuses.
+      </div>`;
+    return;
+  }
+  const doc = doctors.find(d => d.id === currentBonusDoctorId);
+  const records = bonuses
+    .filter(b => b.doctorId === currentBonusDoctorId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const pendingHere = records.filter(r => r.status !== 'paid').length;
+  el.innerHTML = `
+    <div class="bonus-detail-head">
+      <div>
+        <div class="bonus-detail-title">${esc(doc ? doc.name : 'Doctor')}</div>
+        <div class="bonus-detail-sub">${records.length} bonus record${records.length !== 1 ? 's' : ''} &middot; ${fmtMoney(records.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0))} total</div>
+      </div>
+      ${pendingHere > 0 ? `
+        <button class="btn btn-outline btn-sm" onclick="downloadPendingBonuses('${currentBonusDoctorId}')" title="Download this doctor's pending bonuses as a text file">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download Pending
+        </button>` : ''}
+    </div>
+    ${records.length === 0
+      ? '<div class="bonus-detail-empty">No bonuses for this doctor yet.</div>'
+      : records.map(r => renderBonusHistoryRow(r)).join('')
+    }
+  `;
+  // wire actions
+  el.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const act = btn.dataset.action;
+      if (act === 'edit')   openEditBonus(id);
+      if (act === 'delete') confirmDelete('bonus', id, 'bonus');
+      if (act === 'pay')    markBonusPaid(id);
+    });
+  });
+}
+
+function renderBonusHistoryRow(r) {
+  const isPaid = r.status === 'paid';
+  return `
+    <div class="bonus-history-row">
+      <div class="bonus-history-date">${fmtDate(r.createdAt)}</div>
+      <div class="bonus-history-body">
+        <div class="bonus-history-note">${esc(r.note || '—')}</div>
+        <div class="bonus-history-cat">${esc(r.category)} &middot; <span class="bonus-history-status ${isPaid ? 'paid' : 'pending'}">${isPaid ? 'Paid' : 'Pending'}</span></div>
+      </div>
+      <div class="bonus-history-amount">${fmtMoney(r.amount)}</div>
+      <div class="bonus-history-actions">
+        ${!isPaid ? `<button class="icon-btn success" data-action="pay" data-id="${r.id}" title="Mark as paid" aria-label="Mark as paid"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></button>` : ''}
+        <button class="icon-btn" data-action="edit" data-id="${r.id}" title="Edit" aria-label="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="icon-btn danger" data-action="delete" data-id="${r.id}" title="Delete" aria-label="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
+      </div>
+    </div>`;
+}
+
+// ── PENDING BONUS EXPORT (.txt) ─────────────────────────────
+// Builds a Discord-flavoured markdown payout sheet: an H2 mention per doctor,
+// their pending bonuses as a blockquote, and that doctor's total closing it.
+//   ## <@discordId>
+//   > amount (note) | date
+//   > **Total: sum**
+// Pass a doctorId to export a single doctor, or omit for everyone.
+
+function pendingBonusesFor(doctorId) {
+  return bonuses
+    .filter(b => b.status !== 'paid' && (!doctorId || b.doctorId === doctorId))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // oldest first
+}
+
+function doctorNameFor(doctorId, fallback) {
+  const d = doctors.find(x => x.id === doctorId);
+  return d?.name || fallback || 'Unknown Doctor';
+}
+
+// A Discord mention when a numeric ID is on file, otherwise the plain name —
+// discordId is optional on doctors, and a non-numeric value would render as
+// literal text rather than a tag.
+function doctorTagFor(doctorId, fallbackName) {
+  const did = oneLine(doctors.find(x => x.id === doctorId)?.discordId);
+  return /^\d+$/.test(did) ? `<@${did}>` : oneLine(doctorNameFor(doctorId, fallbackName));
+}
+
+// Collapse any stray newlines/tabs — one bonus must stay on one quote line.
+function oneLine(s) {
+  return String(s ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function buildPendingBonusText(doctorId) {
+  const records = pendingBonusesFor(doctorId);
+
+  // Group by doctor id (not name — two doctors can share a name), keeping the
+  // name around so the blocks still come out in alphabetical order.
+  const groups = new Map();
+  for (const r of records) {
+    const key = r.doctorId || `name:${oneLine(r.doctorName)}`;
+    if (!groups.has(key)) groups.set(key, {
+      name: doctorNameFor(r.doctorId, r.doctorName),
+      tag:  doctorTagFor(r.doctorId, r.doctorName),
+      rows: [],
+    });
+    groups.get(key).rows.push(r);
+  }
+  const blocks = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  const lines = [
+    '# EMS PORTAL - PENDING BONUSES',
+    '',
+    `### Generated: ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`,
+    '',
+  ];
+
+  let grand = 0;
+  for (const block of blocks) {
+    let subtotal = 0;
+    lines.push(`## ${block.tag}`);
+    lines.push('');
+    for (const r of block.rows) {
+      const amt   = parseFloat(r.amount) || 0;
+      const label = oneLine(r.note || r.category);
+      subtotal += amt;
+      lines.push(`> ${fmtMoney(amt)}${label ? ` (${label})` : ''} | ${fmtDate(r.createdAt)}`);
+    }
+    grand += subtotal;
+    lines.push(`> **Total: ${fmtMoney(subtotal)}**`);
+    lines.push('');
+  }
+
+  // A grand total only tells you something new when more than one doctor is in.
+  if (blocks.length > 1) {
+    lines.push(`### Grand Total: ${fmtMoney(grand)}`);
+    lines.push(`${records.length} record${records.length !== 1 ? 's' : ''} across ${blocks.length} doctors`);
+  }
+
+  // CRLF so the file opens with correct line breaks in Notepad on Windows.
+  return lines.join('\r\n') + '\r\n';
+}
+
+function saveTextFile(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function fileSlug(s) {
+  return String(s || 'doctor').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'doctor';
+}
+
+window.downloadPendingBonuses = function(doctorId) {
+  const records = pendingBonusesFor(doctorId);
+  if (!records.length) {
+    showToast(doctorId ? 'No pending bonuses for this doctor.' : 'No pending bonuses to export.', 'info');
+    return;
+  }
+  const stamp = dateKey(new Date());
+  const filename = doctorId
+    ? `pending-bonuses-${fileSlug(doctorNameFor(doctorId))}-${stamp}.txt`
+    : `pending-bonuses-${stamp}.txt`;
+  saveTextFile(filename, buildPendingBonusText(doctorId));
+  showToast(`Downloaded ${records.length} pending bonus${records.length !== 1 ? 'es' : ''}.`, 'success');
+};
+
+function renderBonusAddForm() {
+  return `
+    <div class="bonus-detail-head">
+      <div>
+        <div class="bonus-detail-title">Add Bonus</div>
+        <div class="bonus-detail-sub">Record a bonus for a doctor. They'll see it on their dashboard.</div>
+      </div>
+    </div>
+    <div class="bonus-form-card">
+      <div class="form-group">
+        <div class="form-label">Doctor *</div>
+        <div class="custom-select" data-cs-search>
+          <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label placeholder">Select doctor...</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="cs-dropdown"></div>
+          <select id="inlineBonusDoctor" style="display:none" aria-hidden="true"><option value="">Select doctor...</option></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="form-label">Category *</div>
+        <div class="custom-select">
+          <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label placeholder">Select category...</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="cs-dropdown"></div>
+          <select id="inlineBonusCat" style="display:none" aria-hidden="true"></select>
+        </div>
+      </div>
+      <div class="form-group"><div class="form-label">Amount ($) *</div><input type="number" class="form-input" id="inlineBonusAmt" placeholder="0" min="0"></div>
+      <div class="form-group">
+        <div class="form-label">Status</div>
+        <div class="custom-select">
+          <button type="button" class="cs-trigger" aria-haspopup="listbox"><span class="cs-label">Pending</span><svg class="cs-arrow" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="cs-dropdown"></div>
+          <select id="inlineBonusStatus" style="display:none" aria-hidden="true"><option value="pending">Pending</option><option value="paid">Paid</option></select>
+        </div>
+      </div>
+      <div class="form-group bfc-full"><div class="form-label">Note (optional)</div><input type="text" class="form-input" id="inlineBonusNote" placeholder="e.g. Best responder of the week"></div>
+      <div class="bfc-full" style="display:flex;justify-content:flex-end;">
+        <button class="btn btn-primary" id="inlineAddBonusBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Bonus
+        </button>
+      </div>
+    </div>
+    <div>
+      <div class="sec-title" style="font-size:16px;margin-bottom:8px;">Recent Bonuses</div>
+      ${bonuses.length === 0
+        ? '<div class="bonus-detail-empty" style="padding:30px 20px;">No bonuses yet.</div>'
+        : '<div class="bonus-recent-list">' + bonuses.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5).map(r => renderBonusHistoryRow(r)).join('') + '</div>'
+      }
+    </div>
+  `;
+}
+
+window.addBonusInline = async function() {
+  const doctorId  = document.getElementById('inlineBonusDoctor').value;
+  const category  = document.getElementById('inlineBonusCat').value;
+  const note      = document.getElementById('inlineBonusNote').value.trim();
+  const amount    = parseFloat(document.getElementById('inlineBonusAmt').value);
+  const status    = document.getElementById('inlineBonusStatus').value;
+  const btn       = document.getElementById('inlineAddBonusBtn');
+  if (!doctorId || !amount || amount <= 0) { showToast('Doctor and valid amount are required.', 'error'); return; }
+  const doctor = doctors.find(d => d.id === doctorId);
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Adding...';
+  try {
+    const entry = { doctorId, doctorName: doctor?.name || '', category, note, amount, status, createdAt: new Date().toISOString() };
+    const id = await fsAdd(COLLECTIONS.BONUSES, entry);
+    bonuses.push({ id, ...entry });
+    document.getElementById('sBonusPending').textContent = bonuses.filter(b => b.status === 'pending').length;
+    await writeLog(LOG_ACTIONS.BONUS_ADD, { targetId: doctorId, targetName: doctor?.name || '', category, amount, status });
+    showToast(`Bonus of $${amount} added.`, 'success');
+    ['inlineBonusNote', 'inlineBonusAmt'].forEach(i => document.getElementById(i).value = '');
+    refreshBonusSidebar();
+  } catch (e) { showToast('Failed.', 'error'); }
+  btn.disabled = false; btn.innerHTML = 'Add Bonus';
+};
+
+window.openEditBonus = function(id) {
+  const b = bonuses.find(x => x.id === id);
+  if (!b) return;
+  document.getElementById('editBonusId').value = id;
+  document.getElementById('editBonusAmt').value = b.amount;
+  document.getElementById('editBonusNote').value = b.note || '';
+  openModal('editBonus');
+};
+
+window.saveEditBonus = async function() {
+  const id = document.getElementById('editBonusId').value;
+  const amount = parseFloat(document.getElementById('editBonusAmt').value);
+  const note = document.getElementById('editBonusNote').value.trim();
+  const btn = document.getElementById('editBonusBtn');
+  if (!amount || amount <= 0) { showToast('Enter a valid amount.', 'error'); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Saving...';
+  try {
+    await fsUpdate(COLLECTIONS.BONUSES, id, { amount, note });
+    const b = bonuses.find(x => x.id === id);
+    if (b) { b.amount = amount; b.note = note; }
+    refreshBonusSidebar();
+    showToast('Bonus updated.', 'success');
+    closeModal('editBonus');
+  } catch (e) { showToast('Failed to save.', 'error'); }
+  btn.disabled = false; btn.innerHTML = 'Save Changes';
+};
+
+window.addStrike=async function(){
+  const doctorId=document.getElementById('strikeDoctor').value,reason=document.getElementById('strikeReason').value.trim(),btn=document.getElementById('addStrikeBtn');
+  if(!doctorId||!reason){showToast('Doctor and reason are required.','error');return;}
+  const doctor=doctors.find(d=>d.id===doctorId);btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Issuing...';
+  try{
+    const entry={doctorId,doctorName:doctor?.name||'',reason,createdAt:new Date().toISOString()};
+    const id=await fsAdd(COLLECTIONS.STRIKES,entry);strikes.push({id,...entry});renderStrikesTable();
+    document.getElementById('sStrikes').textContent=strikes.length;
+    await writeLog(LOG_ACTIONS.STRIKE_ADD,{targetId:doctorId,targetName:doctor?.name||'',reason});
+    showToast(`Strike issued to ${doctor?.name}.`,'info');closeModal('addStrike');document.getElementById('strikeReason').value='';
+  }catch(e){showToast('Failed.','error');}
+  btn.disabled=false;btn.innerHTML='Issue Strike';
+};
+
+function renderStrikesTable(){
+  document.getElementById('strikeTableCount').textContent=strikes.length+' records';
+  const tbody=document.getElementById('strikeTable');
+  if(!strikes.length){tbody.innerHTML='<tr class="tbl-empty"><td colspan="4">No strikes recorded.</td></tr>';return;}
+  const sorted=[...strikes].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  tbody.innerHTML=sorted.map(s=>`<tr><td><strong class="table-strong">${esc(s.doctorName||'—')}</strong></td><td class="table-subtext">${esc(s.reason)}</td><td class="table-meta">${fmtDate(s.createdAt)}</td><td><button class="btn btn-sm btn-danger" onclick="confirmDelete('strike','${s.id}','strike')">Delete</button></td></tr>`).join('');
+}
+
+function renderAdminsTable(){
+  const tbody=document.getElementById('adminsTable');if(!tbody)return;
+  document.getElementById('adminCount').textContent=subAdmins.length;
+  if(!subAdmins.length){tbody.innerHTML='<tr class="tbl-empty"><td colspan="6">No sub-admins yet.</td></tr>';return;}
+  tbody.innerHTML=subAdmins.map(a=>`<tr>
+    <td><strong class="table-strong">${esc(a.name||'—')}</strong></td>
+    <td class="table-subtext">@${esc(a.username)}</td>
+    <td class="table-meta">${a.discordId?esc(a.discordId):'<span style="color:var(--color-graphite)">—</span>'}</td>
+    <td>${a.disabled?'<span class="badge badge-red">Disabled</span>':'<span class="badge badge-green">Active</span>'}</td>
+    <td class="table-meta">${fmtDate(a.createdAt)}</td>
+    <td style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-outline" onclick="openEditAdmin('${a.id}')">Edit</button>
+      <button class="btn btn-sm ${a.disabled?'btn-success':'btn-outline'}" onclick="toggleSubAdmin('${a.id}',${!!a.disabled})">${a.disabled?'Enable':'Disable'}</button>
+      <button class="btn btn-sm btn-danger" onclick="confirmDelete('subadmin','${a.id}','${esc(a.name||a.username)}')">Delete</button>
+    </td>
+  </tr>`).join('');
+}
+
+window.addSubAdmin=async function(){
+  if(!session.isMaster){showToast('Only master admin can add sub-admins.','error');return;}
+  const name=document.getElementById('newAdminName').value.trim(),user=document.getElementById('newAdminUser').value.trim(),pass=document.getElementById('newAdminPass').value,discordId=document.getElementById('newAdminDiscord').value.trim(),btn=document.getElementById('addAdminBtn');
+  if(!name||!user||!pass){showToast('All fields are required.','error');return;}
+  if(subAdmins.some(a=>a.username===user)){showToast('Username already exists.','error');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Creating...';
+  try{
+    const entry={name,username:user,password:pass,disabled:false,createdAt:new Date().toISOString()};
+    if(discordId) entry.discordId=discordId;
+    const id=await fsAdd(COLLECTIONS.ADMINS,entry);subAdmins.push({id,...entry});renderAdminsTable();
+    await writeLog(LOG_ACTIONS.ADMIN_CREATE,{targetName:name,targetUsername:user});
+    showToast(`Sub-admin "${name}" created.`,'success');closeModal('addAdmin');
+    ['newAdminName','newAdminUser','newAdminPass','newAdminDiscord'].forEach(i=>document.getElementById(i).value='');
+  }catch(e){showToast('Failed.','error');}
+  btn.disabled=false;btn.innerHTML='Create Sub-Admin';
+};
+
+window.openEditAdmin=function(id){
+  if(!session.isMaster){showToast('Only master admin.','error');return;}
+  const a=subAdmins.find(a=>a.id===id);if(!a)return;
+  document.getElementById('editAdminId').value=id;
+  document.getElementById('editAdminName').value=a.name||'';
+  document.getElementById('editAdminUser').value=a.username||'';
+  document.getElementById('editAdminPass').value='';
+  document.getElementById('editAdminDiscord').value=a.discordId||'';
+  openModal('editAdmin');
+};
+
+window.saveEditAdmin=async function(){
+  if(!session.isMaster){showToast('Only master admin.','error');return;}
+  const id=document.getElementById('editAdminId').value,name=document.getElementById('editAdminName').value.trim(),user=document.getElementById('editAdminUser').value.trim(),pass=document.getElementById('editAdminPass').value,discordId=document.getElementById('editAdminDiscord').value.trim(),btn=document.getElementById('editAdminBtn');
+  if(!name||!user){showToast('Name and username are required.','error');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Saving...';
+  try{
+    const upd={name,username:user};
+    if(pass) upd.password=pass;
+    upd.discordId=discordId||'';
+    await fsUpdate(COLLECTIONS.ADMINS,id,upd);
+    const a=subAdmins.find(a=>a.id===id);
+    if(a){a.name=name;a.username=user;a.discordId=discordId;if(pass)a.password=pass;}
+    renderAdminsTable();
+    showToast(`Sub-admin "${name}" updated.`,'success');closeModal('editAdmin');
+  }catch(e){showToast('Failed to save.','error');}
+  btn.disabled=false;btn.innerHTML='Save Changes';
+};
+
+window.toggleSubAdmin=async function(id,currentlyDisabled){
+  if(!session.isMaster){showToast('Only master admin.','error');return;}
+  try{await fsUpdate(COLLECTIONS.ADMINS,id,{disabled:!currentlyDisabled});const a=subAdmins.find(a=>a.id===id);if(a)a.disabled=!currentlyDisabled;renderAdminsTable();showToast(currentlyDisabled?'Enabled.':'Disabled.','info');}catch(e){showToast('Failed.','error');}
+};
+
+// ── Bot Control Admins (managed Discord IDs) ───────────────────
+async function loadBotAdmins(){
+  const d = await fsGetDoc(COLLECTIONS.BOT_CONFIG, 'discord_admins');
+  botAdmins = (d && Array.isArray(d.admins)) ? d.admins : [];
+  renderBotAdmins();
+}
+
+function renderBotAdmins(){
+  const tbody=document.getElementById('botAdminsTable');if(!tbody)return;
+  document.getElementById('botAdminCount').textContent=botAdmins.length;
+  if(!botAdmins.length){tbody.innerHTML='<tr class="tbl-empty"><td colspan="3">No managed bot admins yet.</td></tr>';return;}
+  tbody.innerHTML=botAdmins.map(a=>`<tr>
+    <td><strong class="table-strong">${esc(a.name||'—')}</strong></td>
+    <td class="table-meta">${esc(a.discordId||'')}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="removeBotAdmin('${esc(a.discordId)}')">Remove</button></td>
+  </tr>`).join('');
+}
+
+async function saveBotAdmins(){
+  await fsSet(COLLECTIONS.BOT_CONFIG, 'discord_admins', { admins: botAdmins, updatedAt: new Date().toISOString() });
+}
+
+window.addBotAdmin=async function(){
+  if(!session.isMaster){showToast('Only master admin can manage bot admins.','error');return;}
+  const name=document.getElementById('newBotAdminName').value.trim();
+  const id=document.getElementById('newBotAdminId').value.trim();
+  if(!name||!id){showToast('Name and Discord ID are required.','error');return;}
+  if(!/^\d{17,20}$/.test(id)){showToast('Enter a valid Discord user ID (17–20 digits).','error');return;}
+  if(botAdmins.some(a=>a.discordId===id)){showToast('That Discord ID is already a bot admin.','error');return;}
+  const btn=document.getElementById('addBotAdminBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Adding...';
+  try{
+    botAdmins.push({name,discordId:id});
+    await saveBotAdmins();
+    renderBotAdmins();
+    await writeLog('BOT_ADMIN_ADD',{targetName:name,discordId:id});
+    showToast(`Bot admin "${name}" added.`,'success');
+    document.getElementById('newBotAdminName').value='';document.getElementById('newBotAdminId').value='';
+  }catch(e){botAdmins=botAdmins.filter(a=>a.discordId!==id);showToast('Failed to save.','error');}
+  btn.disabled=false;btn.innerHTML='Add';
+};
+
+window.removeBotAdmin=async function(discordId){
+  if(!session.isMaster){showToast('Only master admin can manage bot admins.','error');return;}
+  const removed=botAdmins.find(a=>a.discordId===discordId);
+  const prev=botAdmins;
+  botAdmins=botAdmins.filter(a=>a.discordId!==discordId);
+  try{
+    await saveBotAdmins();
+    renderBotAdmins();
+    await writeLog('BOT_ADMIN_REMOVE',{targetName:removed?.name||'',discordId});
+    showToast('Bot admin removed.','info');
+  }catch(e){botAdmins=prev;renderBotAdmins();showToast('Failed to remove.','error');}
+};
+
+let pendingDel=null;
+window.confirmDelete=function(type,id,label){
+  pendingDel={type,id,label};
+  const msgs={doctor:[`Delete Doctor "${label}"?`,'This will permanently delete the doctor account.'],bonus:['Delete Bonus Record?','This will permanently remove this bonus.'],strike:['Delete Strike?','This will permanently remove this strike.'],subadmin:[`Delete Sub-Admin "${label}"?`,'This sub-admin will lose access immediately.']};
+  document.getElementById('confirmTitle').textContent=msgs[type][0];document.getElementById('confirmBody').textContent=msgs[type][1];
+  document.getElementById('confirmOkBtn').onclick=executeDelete;openModal('confirm');
+};
+
+async function executeDelete(){
+  if(!pendingDel)return;closeModal('confirm');const{type,id}=pendingDel;
+  const colMap={doctor:COLLECTIONS.DOCTORS,bonus:COLLECTIONS.BONUSES,strike:COLLECTIONS.STRIKES,subadmin:COLLECTIONS.ADMINS};
+  try{
+    await fsDelete(colMap[type],id);
+    if(type==='doctor'){doctors=doctors.filter(d=>d.id!==id);renderDoctorsList();populateDoctorSelects();updateDoctorCount();}
+    if(type==='bonus'){bonuses=bonuses.filter(b=>b.id!==id);renderBonusTable();document.getElementById('sBonusPending').textContent=bonuses.filter(b=>b.status==='pending').length;refreshBonusSidebar();}
+    if(type==='strike'){strikes=strikes.filter(s=>s.id!==id);renderStrikesTable();document.getElementById('sStrikes').textContent=strikes.length;if(document.getElementById('view-doctors')?.classList.contains('active')) renderDoctorDetail();}
+    if(type==='subadmin'){subAdmins=subAdmins.filter(a=>a.id!==id);renderAdminsTable();}
+    const actionMap={doctor:LOG_ACTIONS.DOCTOR_DELETE,bonus:LOG_ACTIONS.BONUS_DELETE,strike:LOG_ACTIONS.STRIKE_DELETE,subadmin:LOG_ACTIONS.ADMIN_DELETE};
+    await writeLog(actionMap[type]||'DELETE',{targetId:id,targetLabel:pendingDel?.label||id});
+    showToast('Deleted successfully.','success');
+  }catch(e){showToast('Delete failed.','error');}
+}
+
+// ── Admin Rules ─────────────────────────────────────────────
+async function loadAdminRules() {
+  const container = document.getElementById('adminRulesList');
+  container.innerHTML = '<div class="card mb-24"><div class="card-body"><div class="skeleton" style="height:18px;width:40%;margin-bottom:14px"></div><div class="skeleton" style="height:12px;width:90%;margin-bottom:10px"></div><div class="skeleton" style="height:12px;width:85%;margin-bottom:10px"></div><div class="skeleton" style="height:12px;width:70%"></div></div></div>';
+  try {
+    const cats  = await fsGetAll(COLLECTIONS.RULES_CATEGORIES);
+    const items = await fsGetAll(COLLECTIONS.RULES_ITEMS);
+    cats.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    if (!cats.length) {
+      container.innerHTML = '<div class="hint-box">No categories yet. Click "+ Add Category" to create one.</div>';
+      return;
+    }
+    let html = '';
+    for (const cat of cats) {
+      const catItems = items
+        .filter(i => i.categoryId === cat.id)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      html += `
+        <div class="card mb-24" data-cat-id="${cat.id}" data-cat-drag>
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="drag-handle" draggable="true" data-cat-handle="${cat.id}" title="Drag to reorder category" aria-label="Drag to reorder category"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/></svg></span>
+              <div class="card-title">${esc(cat.name)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="card-count">${catItems.length} rule${catItems.length !== 1 ? 's' : ''}</span>
+              <button class="btn btn-primary btn-sm" onclick="openAddRuleModal('${cat.id}','${esc(cat.name)}')">+ Add Rule</button>
+              <button class="btn btn-outline btn-sm" onclick="openEditCategory('${cat.id}','${esc(cat.name)}')" title="Edit category name">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteCategory('${cat.id}','${esc(cat.name)}')">Delete</button>
+            </div>
+          </div>
+          <div class="card-body">
+            ${catItems.length === 0
+              ? '<div class="hint-box" style="padding:20px;">No rules yet. Click "+ Add Rule".</div>'
+              : catItems.map((item, idx) => `
+                  <div class="rules-item" data-rule-id="${item.id}" data-rule-drag data-cat-id="${cat.id}" data-idx="${idx}">
+                    <span class="drag-handle" draggable="true" data-rule-handle="${item.id}" title="Drag to reorder" aria-label="Drag to reorder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/></svg></span>
+                    <span class="rules-num">${idx + 1}</span>
+                    <span class="rules-text">${esc(item.text)}</span>
+                    <button class="btn btn-outline btn-sm" onclick="openEditRule('${item.id}','${esc(item.text)}')" title="Edit rule">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteRule('${item.id}','${cat.id}')">Delete</button>
+                  </div>`).join('')
+            }
+          </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+    attachRulesDragHandlers(container);
+  } catch(e) {
+    container.innerHTML = '<div class="hint-box">Failed to load rules.</div>';
+  }
+}
+
+function attachRulesDragHandlers(container) {
+  // ── Rule reordering: handle is the drag source ────────────
+  let ruleDragId = null;
+  container.querySelectorAll('[data-rule-handle]').forEach(handle => {
+    // The handle is always a direct child of the .rules-item row.
+    const row = handle.parentElement;
+    handle.addEventListener('dragstart', (e) => {
+      ruleDragId = row.dataset.ruleId;
+      row.classList.add('dragging');
+      // Set a custom drag image so the user sees the whole row as the ghost.
+      try {
+        if (e.dataTransfer.setDragImage) {
+          const clone = row.cloneNode(true);
+          clone.style.width = row.offsetWidth + 'px';
+          clone.style.opacity = '0.85';
+          clone.style.position = 'absolute';
+          clone.style.top = '-9999px';
+          document.body.appendChild(clone);
+          e.dataTransfer.setDragImage(clone, 20, 20);
+          setTimeout(() => clone.remove(), 0);
+        }
+        e.dataTransfer.setData('text/plain', ruleDragId);
+      } catch(_) {}
+      e.dataTransfer.effectAllowed = 'move';
+      e.stopPropagation();
+    });
+    handle.addEventListener('dragend', () => {
+      ruleDragId = null;
+      row.classList.remove('dragging');
+      container.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(el => {
+        el.classList.remove('drag-over-top','drag-over-bottom');
+      });
+    });
+  });
+  // Row-level drop targets (use the row, not the handle, so we have full row height)
+  container.querySelectorAll('[data-rule-drag]').forEach(row => {
+    row.addEventListener('dragover', (e) => {
+      if (!ruleDragId || ruleDragId === row.dataset.ruleId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = row.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      row.classList.toggle('drag-over-top', isTop);
+      row.classList.toggle('drag-over-bottom', !isTop);
+    });
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drag-over-top','drag-over-bottom');
+    });
+    row.addEventListener('drop', async (e) => {
+      if (!ruleDragId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const droppedId = ruleDragId;
+      row.classList.remove('drag-over-top','drag-over-bottom');
+      if (!droppedId || droppedId === row.dataset.ruleId) return;
+      const catId = row.dataset.catId;
+      const rect = row.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      await reorderRuleInCategory(catId, droppedId, row.dataset.ruleId, isTop ? 'before' : 'after');
+    });
+  });
+
+  // ── Category reordering: handle is the drag source ────────
+  let catDragId = null;
+  container.querySelectorAll('[data-cat-handle]').forEach(handle => {
+    const card = handle.parentElement.closest('[data-cat-drag]');
+    handle.addEventListener('dragstart', (e) => {
+      catDragId = card.dataset.catId;
+      card.classList.add('dragging');
+      try {
+        if (e.dataTransfer.setDragImage) {
+          const clone = card.cloneNode(true);
+          clone.style.width = card.offsetWidth + 'px';
+          clone.style.opacity = '0.85';
+          clone.style.position = 'absolute';
+          clone.style.top = '-9999px';
+          document.body.appendChild(clone);
+          e.dataTransfer.setDragImage(clone, 20, 20);
+          setTimeout(() => clone.remove(), 0);
+        }
+        e.dataTransfer.setData('text/category', catDragId);
+      } catch(_) {}
+      e.dataTransfer.effectAllowed = 'move';
+      e.stopPropagation();
+    });
+    handle.addEventListener('dragend', () => {
+      catDragId = null;
+      card.classList.remove('dragging');
+      container.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(el => {
+        el.classList.remove('drag-over-top','drag-over-bottom');
+      });
+    });
+  });
+  // Card-level drop targets
+  container.querySelectorAll('[data-cat-drag]').forEach(card => {
+    card.addEventListener('dragover', (e) => {
+      if (!catDragId || catDragId === card.dataset.catId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = card.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      card.classList.toggle('drag-over-top', isTop);
+      card.classList.toggle('drag-over-bottom', !isTop);
+    });
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('drag-over-top','drag-over-bottom');
+    });
+    card.addEventListener('drop', async (e) => {
+      if (!catDragId) return;
+      e.preventDefault();
+      const droppedId = catDragId;
+      card.classList.remove('drag-over-top','drag-over-bottom');
+      if (!droppedId || droppedId === card.dataset.catId) return;
+      const rect = card.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      await reorderCategory(droppedId, card.dataset.catId, isTop ? 'before' : 'after');
+    });
+  });
+}
+
+async function reorderRuleInCategory(catId, movedId, targetId, position) {
+  try {
+    const items = (await fsGetAll(COLLECTIONS.RULES_ITEMS))
+      .filter(i => i.categoryId === catId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const movedIdx = items.findIndex(i => i.id === movedId);
+    if (movedIdx < 0) return;
+    const [moved] = items.splice(movedIdx, 1);
+    let targetIdx = items.findIndex(i => i.id === targetId);
+    if (targetIdx < 0) targetIdx = items.length;
+    const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
+    items.splice(insertAt, 0, moved);
+    // Live re-number DOM
+    const card = document.querySelector(`[data-rule-id="${movedId}"]`)?.closest('[data-cat-drag]');
+    if (card) {
+      card.querySelectorAll('[data-rule-drag]').forEach((row, i) => {
+        const num = row.querySelector('.rules-num');
+        if (num) num.textContent = (i + 1);
+      });
+    }
+    // Persist
+    await Promise.all(items.map((it, i) => fsUpdate(COLLECTIONS.RULES_ITEMS, it.id, { order: i })));
+    await writeLog(LOG_ACTIONS.RULE_REORDER, { type: 'rules', catId, movedId, targetId, position });
+  } catch(e) { showToast('Reorder failed.', 'error'); }
+}
+
+async function reorderCategory(movedId, targetId, position) {
+  try {
+    const cats = (await fsGetAll(COLLECTIONS.RULES_CATEGORIES))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const movedIdx = cats.findIndex(c => c.id === movedId);
+    if (movedIdx < 0) return;
+    const [moved] = cats.splice(movedIdx, 1);
+    let targetIdx = cats.findIndex(c => c.id === targetId);
+    if (targetIdx < 0) targetIdx = cats.length;
+    const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
+    cats.splice(insertAt, 0, moved);
+    await Promise.all(cats.map((c, i) => fsUpdate(COLLECTIONS.RULES_CATEGORIES, c.id, { order: i })));
+    await writeLog(LOG_ACTIONS.RULE_REORDER, { type: 'categories', movedId, targetId, position });
+    loadAdminRules();
+  } catch(e) { showToast('Reorder failed.', 'error'); }
+}
+
+window.openAddCategoryModal = function() {
+  document.getElementById('newCategoryName').value = '';
+  openModal('addCategory');
+};
+
+window.saveCategory = async function() {
+  const name = document.getElementById('newCategoryName').value.trim();
+  if (!name) return;
+  try {
+    const cats = await fsGetAll(COLLECTIONS.RULES_CATEGORIES);
+    await fsAdd(COLLECTIONS.RULES_CATEGORIES, { name, order: cats.length, createdAt: new Date() });
+    await writeLog(LOG_ACTIONS.RULE_CREATE, { type: 'category', name });
+    closeModal('addCategory');
+    showToast('Category created', 'success');
+    loadAdminRules();
+  } catch(e) { showToast('Failed to create category', 'error'); }
+};
+
+window.openAddRuleModal = function(categoryId, categoryName) {
+  document.getElementById('addRuleCategoryId').value = categoryId;
+  document.getElementById('addRuleModalSub').textContent = `Adding rule to: ${categoryName}`;
+  document.getElementById('newRuleText').value = '';
+  openModal('addRule');
+};
+
+window.saveRule = async function() {
+  const categoryId = document.getElementById('addRuleCategoryId').value;
+  const text       = document.getElementById('newRuleText').value.trim();
+  if (!text || !categoryId) return;
+  try {
+    const existing = (await fsGetAll(COLLECTIONS.RULES_ITEMS)).filter(i => i.categoryId === categoryId);
+    await fsAdd(COLLECTIONS.RULES_ITEMS, { categoryId, text, order: existing.length, createdAt: new Date() });
+    await writeLog(LOG_ACTIONS.RULE_CREATE, { type: 'rule', categoryId, text });
+    closeModal('addRule');
+    showToast('Rule added', 'success');
+    loadAdminRules();
+  } catch(e) { showToast('Failed to add rule', 'error'); }
+};
+
+window.deleteCategory = async function(categoryId, categoryName) {
+  if (!confirm(`Delete category "${categoryName}" and ALL its rules? This cannot be undone.`)) return;
+  try {
+    const items = (await fsGetAll(COLLECTIONS.RULES_ITEMS)).filter(i => i.categoryId === categoryId);
+    await Promise.all(items.map(i => fsDelete(COLLECTIONS.RULES_ITEMS, i.id)));
+    await fsDelete(COLLECTIONS.RULES_CATEGORIES, categoryId);
+    await writeLog(LOG_ACTIONS.RULE_DELETE, { type: 'category', categoryId, categoryName });
+    showToast('Category deleted', 'success');
+    loadAdminRules();
+  } catch(e) { showToast('Failed to delete category', 'error'); }
+};
+
+window.deleteRule = async function(ruleId, categoryId) {
+  if (!confirm('Delete this rule?')) return;
+  try {
+    await fsDelete(COLLECTIONS.RULES_ITEMS, ruleId);
+    await writeLog(LOG_ACTIONS.RULE_DELETE, { type: 'rule', ruleId, categoryId });
+    showToast('Rule deleted', 'success');
+    loadAdminRules();
+  } catch(e) { showToast('Failed to delete rule', 'error'); }
+};
+
+window.openEditRule = function(ruleId, currentText) {
+  document.getElementById('editRuleId').value = ruleId;
+  document.getElementById('editRuleText').value = currentText || '';
+  openModal('editRule');
+};
+
+window.saveEditRule = async function() {
+  const id = document.getElementById('editRuleId').value;
+  const text = document.getElementById('editRuleText').value.trim();
+  if (!text) { showToast('Rule text cannot be empty.', 'error'); return; }
+  try {
+    await fsUpdate(COLLECTIONS.RULES_ITEMS, id, { text });
+    await writeLog(LOG_ACTIONS.RULE_EDIT, { type: 'rule', ruleId: id, text });
+    showToast('Rule updated', 'success');
+    closeModal('editRule');
+    loadAdminRules();
+  } catch (e) { showToast('Failed to save', 'error'); }
+};
+
+window.openEditCategory = function(catId, currentName) {
+  document.getElementById('editCategoryId').value = catId;
+  document.getElementById('editCategoryName').value = currentName || '';
+  openModal('editCategory');
+};
+
+window.saveEditCategory = async function() {
+  const id = document.getElementById('editCategoryId').value;
+  const name = document.getElementById('editCategoryName').value.trim();
+  if (!name) { showToast('Category name cannot be empty.', 'error'); return; }
+  try {
+    await fsUpdate(COLLECTIONS.RULES_CATEGORIES, id, { name });
+    await writeLog(LOG_ACTIONS.RULE_EDIT, { type: 'category', categoryId: id, name });
+    showToast('Category renamed', 'success');
+    closeModal('editCategory');
+    loadAdminRules();
+  } catch (e) { showToast('Failed to save', 'error'); }
+};
+
+// ── Admin Training (mirror of rules, scoped to training_*) ──
+async function loadAdminTraining() {
+  const container = document.getElementById('adminTrainingList');
+  container.innerHTML = '<div class="card mb-24"><div class="card-body"><div class="skeleton" style="height:18px;width:40%;margin-bottom:14px"></div><div class="skeleton" style="height:12px;width:90%;margin-bottom:10px"></div><div class="skeleton" style="height:12px;width:85%;margin-bottom:10px"></div><div class="skeleton" style="height:12px;width:70%"></div></div></div>';
+  try {
+    const cats  = await fsGetAll(COLLECTIONS.TRAINING_CATEGORIES);
+    const items = await fsGetAll(COLLECTIONS.TRAINING_ITEMS);
+    cats.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    if (!cats.length) {
+      container.innerHTML = '<div class="hint-box">No training categories yet. Click "+ Add Category" to create one.</div>';
+      return;
+    }
+    // Store items in a map so onclick can look up by ID (avoids quote-breaking bugs)
+    window._trainingItemMap = {};
+    items.forEach(it => { window._trainingItemMap[it.id] = it.text; });
+
+    let html = '';
+    for (const cat of cats) {
+      const catItems = items
+        .filter(i => i.categoryId === cat.id)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      html += `
+        <div class="card mb-24" data-train-cat-id="${cat.id}" data-train-cat-drag>
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="drag-handle" draggable="true" data-train-cat-handle="${cat.id}" title="Drag to reorder category" aria-label="Drag to reorder category"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/></svg></span>
+              <div class="card-title">${esc(cat.name)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="card-count">${catItems.length} item${catItems.length !== 1 ? 's' : ''}</span>
+              <button class="btn btn-primary btn-sm" onclick="openAddTrainingRuleModal('${cat.id}','${esc(cat.name)}')">+ Add Instruction</button>
+              <button class="btn btn-outline btn-sm" onclick="openEditTrainingCategory('${cat.id}','${esc(cat.name)}')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteTrainingCategory('${cat.id}','${esc(cat.name)}')">Delete</button>
+            </div>
+          </div>
+          <div class="card-body">
+            ${catItems.length === 0
+              ? '<div class="hint-box" style="padding:20px;">No training instructions yet. Click "+ Add Instruction".</div>'
+              : catItems.map((item, idx) => `
+                  <div class="rules-item" data-train-rule-id="${item.id}" data-train-rule-drag data-train-cat-id="${cat.id}">
+                    <span class="drag-handle" draggable="true" data-train-rule-handle="${item.id}" title="Drag to reorder" aria-label="Drag to reorder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/></svg></span>
+                    <span class="rules-num">${idx + 1}</span>
+                    <span class="rules-text md-content">${renderMarkdown(item.text)}</span>
+                    <button class="btn btn-outline btn-sm" onclick="openEditTrainingRule('${item.id}')">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteTrainingRule('${item.id}','${cat.id}')">Delete</button>
+                  </div>`).join('')
+            }
+          </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+    attachTrainingDragHandlers(container);
+  } catch(e) {
+    container.innerHTML = '<div class="hint-box">Failed to load training.</div>';
+  }
+}
+
+function attachTrainingDragHandlers(container) {
+  let ruleDragId = null;
+  container.querySelectorAll('[data-train-rule-handle]').forEach(handle => {
+    const row = handle.parentElement;
+    handle.addEventListener('dragstart', (e) => {
+      ruleDragId = row.dataset.trainRuleId;
+      row.classList.add('dragging');
+      try {
+        if (e.dataTransfer.setDragImage) {
+          const clone = row.cloneNode(true);
+          clone.style.width = row.offsetWidth + 'px';
+          clone.style.opacity = '0.85';
+          clone.style.position = 'absolute';
+          clone.style.top = '-9999px';
+          document.body.appendChild(clone);
+          e.dataTransfer.setDragImage(clone, 20, 20);
+          setTimeout(() => clone.remove(), 0);
+        }
+        e.dataTransfer.setData('text/plain', ruleDragId);
+      } catch(_) {}
+      e.dataTransfer.effectAllowed = 'move';
+      e.stopPropagation();
+    });
+    handle.addEventListener('dragend', () => {
+      ruleDragId = null;
+      row.classList.remove('dragging');
+      container.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(el => el.classList.remove('drag-over-top','drag-over-bottom'));
+    });
+  });
+  container.querySelectorAll('[data-train-rule-drag]').forEach(row => {
+    row.addEventListener('dragover', (e) => {
+      if (!ruleDragId || ruleDragId === row.dataset.trainRuleId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = row.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      row.classList.toggle('drag-over-top', isTop);
+      row.classList.toggle('drag-over-bottom', !isTop);
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over-top','drag-over-bottom'));
+    row.addEventListener('drop', async (e) => {
+      if (!ruleDragId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const droppedId = ruleDragId;
+      row.classList.remove('drag-over-top','drag-over-bottom');
+      if (!droppedId || droppedId === row.dataset.trainRuleId) return;
+      const catId = row.dataset.trainCatId;
+      const rect = row.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      await reorderTrainingRule(catId, droppedId, row.dataset.trainRuleId, isTop ? 'before' : 'after');
+    });
+  });
+
+  let catDragId = null;
+  container.querySelectorAll('[data-train-cat-handle]').forEach(handle => {
+    const card = handle.parentElement.closest('[data-train-cat-drag]');
+    handle.addEventListener('dragstart', (e) => {
+      catDragId = card.dataset.trainCatId;
+      card.classList.add('dragging');
+      try {
+        if (e.dataTransfer.setDragImage) {
+          const clone = card.cloneNode(true);
+          clone.style.width = card.offsetWidth + 'px';
+          clone.style.opacity = '0.85';
+          clone.style.position = 'absolute';
+          clone.style.top = '-9999px';
+          document.body.appendChild(clone);
+          e.dataTransfer.setDragImage(clone, 20, 20);
+          setTimeout(() => clone.remove(), 0);
+        }
+        e.dataTransfer.setData('text/category', catDragId);
+      } catch(_) {}
+      e.dataTransfer.effectAllowed = 'move';
+      e.stopPropagation();
+    });
+    handle.addEventListener('dragend', () => {
+      catDragId = null;
+      card.classList.remove('dragging');
+      container.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(el => el.classList.remove('drag-over-top','drag-over-bottom'));
+    });
+  });
+  container.querySelectorAll('[data-train-cat-drag]').forEach(card => {
+    card.addEventListener('dragover', (e) => {
+      if (!catDragId || catDragId === card.dataset.trainCatId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = card.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      card.classList.toggle('drag-over-top', isTop);
+      card.classList.toggle('drag-over-bottom', !isTop);
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over-top','drag-over-bottom'));
+    card.addEventListener('drop', async (e) => {
+      if (!catDragId) return;
+      e.preventDefault();
+      const droppedId = catDragId;
+      card.classList.remove('drag-over-top','drag-over-bottom');
+      if (!droppedId || droppedId === card.dataset.trainCatId) return;
+      const rect = card.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < rect.height / 2;
+      await reorderTrainingCategory(droppedId, card.dataset.trainCatId, isTop ? 'before' : 'after');
+    });
+  });
+}
+
+async function reorderTrainingRule(catId, movedId, targetId, position) {
+  try {
+    const items = (await fsGetAll(COLLECTIONS.TRAINING_ITEMS))
+      .filter(i => i.categoryId === catId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const movedIdx = items.findIndex(i => i.id === movedId);
+    if (movedIdx < 0) return;
+    const [moved] = items.splice(movedIdx, 1);
+    let targetIdx = items.findIndex(i => i.id === targetId);
+    if (targetIdx < 0) targetIdx = items.length;
+    const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
+    items.splice(insertAt, 0, moved);
+    const card = document.querySelector(`[data-train-rule-id="${movedId}"]`)?.closest('[data-train-cat-drag]');
+    if (card) {
+      card.querySelectorAll('[data-train-rule-drag]').forEach((row, i) => {
+        const num = row.querySelector('.rules-num');
+        if (num) num.textContent = (i + 1);
+      });
+    }
+    await Promise.all(items.map((it, i) => fsUpdate(COLLECTIONS.TRAINING_ITEMS, it.id, { order: i })));
+    await writeLog(LOG_ACTIONS.RULE_REORDER, { type: 'training-rules', catId, movedId, targetId, position });
+  } catch(e) { showToast('Reorder failed.', 'error'); }
+}
+
+async function reorderTrainingCategory(movedId, targetId, position) {
+  try {
+    const cats = (await fsGetAll(COLLECTIONS.TRAINING_CATEGORIES))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const movedIdx = cats.findIndex(c => c.id === movedId);
+    if (movedIdx < 0) return;
+    const [moved] = cats.splice(movedIdx, 1);
+    let targetIdx = cats.findIndex(c => c.id === targetId);
+    if (targetIdx < 0) targetIdx = cats.length;
+    const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
+    cats.splice(insertAt, 0, moved);
+    await Promise.all(cats.map((c, i) => fsUpdate(COLLECTIONS.TRAINING_CATEGORIES, c.id, { order: i })));
+    await writeLog(LOG_ACTIONS.RULE_REORDER, { type: 'training-categories', movedId, targetId, position });
+    loadAdminTraining();
+  } catch(e) { showToast('Reorder failed.', 'error'); }
+}
+
+window.openAddTrainingCategoryModal = function() {
+  document.getElementById('newTrainingCategoryName').value = '';
+  openModal('addTrainingCategory');
+};
+
+window.saveTrainingCategory = async function() {
+  const name = document.getElementById('newTrainingCategoryName').value.trim();
+  if (!name) return;
+  try {
+    const cats = await fsGetAll(COLLECTIONS.TRAINING_CATEGORIES);
+    await fsAdd(COLLECTIONS.TRAINING_CATEGORIES, { name, order: cats.length, createdAt: new Date() });
+    await writeLog(LOG_ACTIONS.RULE_CREATE, { type: 'training-category', name });
+    closeModal('addTrainingCategory');
+    showToast('Training category created', 'success');
+    loadAdminTraining();
+  } catch(e) { showToast('Failed to create category', 'error'); }
+};
+
+window.openAddTrainingRuleModal = function(catId, catName) {
+  document.getElementById('addTrainingRuleCategoryId').value = catId;
+  document.getElementById('addTrainingRuleModalSub').textContent = `Adding instruction to: ${catName}`;
+  document.getElementById('newTrainingRuleText').value = '';
+  openModal('addTrainingRule');
+};
+
+window.saveTrainingRule = async function() {
+  const catId = document.getElementById('addTrainingRuleCategoryId').value;
+  const text  = document.getElementById('newTrainingRuleText').value.trim();
+  if (!text || !catId) return;
+  try {
+    const existing = (await fsGetAll(COLLECTIONS.TRAINING_ITEMS)).filter(i => i.categoryId === catId);
+    await fsAdd(COLLECTIONS.TRAINING_ITEMS, { categoryId: catId, text, order: existing.length, createdAt: new Date() });
+    await writeLog(LOG_ACTIONS.RULE_CREATE, { type: 'training-rule', catId, text });
+    closeModal('addTrainingRule');
+    showToast('Training instruction added', 'success');
+    loadAdminTraining();
+  } catch(e) { showToast('Failed to add instruction', 'error'); }
+};
+
+window.openEditTrainingRule = function(id) {
+  // Look up from the map — avoids any quote/newline issues from passing text inline
+  const currentText = (window._trainingItemMap && window._trainingItemMap[id]) || '';
+  document.getElementById('editTrainingRuleId').value = id;
+  document.getElementById('editTrainingRuleText').value = currentText;
+  openModal('editTrainingRule');
+};
+
+window.saveEditTrainingRule = async function() {
+  const id = document.getElementById('editTrainingRuleId').value;
+  const text = document.getElementById('editTrainingRuleText').value.trim();
+  if (!text) { showToast('Instruction text cannot be empty.', 'error'); return; }
+  try {
+    await fsUpdate(COLLECTIONS.TRAINING_ITEMS, id, { text });
+    await writeLog(LOG_ACTIONS.RULE_EDIT, { type: 'training-rule', ruleId: id, text });
+    showToast('Instruction updated', 'success');
+    closeModal('editTrainingRule');
+    loadAdminTraining();
+  } catch(e) { showToast('Failed to save', 'error'); }
+};
+
+window.openEditTrainingCategory = function(id, currentName) {
+  document.getElementById('editTrainingCategoryId').value = id;
+  document.getElementById('editTrainingCategoryName').value = currentName || '';
+  openModal('editTrainingCategory');
+};
+
+window.saveEditTrainingCategory = async function() {
+  const id = document.getElementById('editTrainingCategoryId').value;
+  const name = document.getElementById('editTrainingCategoryName').value.trim();
+  if (!name) { showToast('Category name cannot be empty.', 'error'); return; }
+  try {
+    await fsUpdate(COLLECTIONS.TRAINING_CATEGORIES, id, { name });
+    await writeLog(LOG_ACTIONS.RULE_EDIT, { type: 'training-category', categoryId: id, name });
+    showToast('Category renamed', 'success');
+    closeModal('editTrainingCategory');
+    loadAdminTraining();
+  } catch(e) { showToast('Failed to save', 'error'); }
+};
+
+window.deleteTrainingRule = async function(ruleId, catId) {
+  if (!confirm('Delete this training instruction?')) return;
+  try {
+    await fsDelete(COLLECTIONS.TRAINING_ITEMS, ruleId);
+    await writeLog(LOG_ACTIONS.RULE_DELETE, { type: 'training-rule', ruleId, catId });
+    showToast('Deleted', 'success');
+    loadAdminTraining();
+  } catch(e) { showToast('Failed to delete', 'error'); }
+};
+
+window.deleteTrainingCategory = async function(catId, catName) {
+  if (!confirm(`Delete training category "${catName}" and ALL its instructions?`)) return;
+  try {
+    const items = (await fsGetAll(COLLECTIONS.TRAINING_ITEMS)).filter(i => i.categoryId === catId);
+    await Promise.all(items.map(i => fsDelete(COLLECTIONS.TRAINING_ITEMS, i.id)));
+    await fsDelete(COLLECTIONS.TRAINING_CATEGORIES, catId);
+    await writeLog(LOG_ACTIONS.RULE_DELETE, { type: 'training-category', catId, catName });
+    showToast('Category deleted', 'success');
+    loadAdminTraining();
+  } catch(e) { showToast('Failed to delete', 'error'); }
+};
+
+// ── Tiny markdown renderer for training instructions ────────────
+function renderMarkdown(text) {
+  if (!text) return '';
+  // Escape HTML first, then apply markdown on top
+  let s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Process line by line for block elements
+  const lines = s.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // ### h3
+    if (/^###\s+(.+)/.test(line)) {
+      out.push('<h4 style="font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--ink);margin:12px 0 4px;">' + line.replace(/^###\s+/, '') + '</h4>'); i++;
+    // ## h2
+    } else if (/^##\s+(.+)/.test(line)) {
+      out.push('<h3 style="font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--ink);margin:14px 0 6px;">' + line.replace(/^##\s+/, '') + '</h3>'); i++;
+    // # h1
+    } else if (/^#\s+(.+)/.test(line)) {
+      out.push('<h2 style="font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--ink);margin:16px 0 8px;">' + line.replace(/^#\s+/, '') + '</h2>'); i++;
+    // bullet list: - or *
+    } else if (/^[-*]\s+/.test(line)) {
+      const listLines = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
+        listLines.push('<li>' + applyInlineMarkdown(lines[i].replace(/^[-*]\s+/, '')) + '</li>');
+        i++;
+      }
+      out.push('<ul style="margin:6px 0 6px 20px;padding:0;">' + listLines.join('') + '</ul>');
+    // numbered list: 1.
+    } else if (/^\d+\.\s+/.test(line)) {
+      const listLines = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+        listLines.push('<li>' + applyInlineMarkdown(lines[i].replace(/^\d+\.\s+/, '')) + '</li>');
+        i++;
+      }
+      out.push('<ol style="margin:6px 0 6px 20px;padding:0;">' + listLines.join('') + '</ol>');
+    // blank line → spacing
+    } else if (line.trim() === '') {
+      out.push('<div style="height:8px"></div>'); i++;
+    // normal paragraph line
+    } else {
+      out.push('<p style="margin:0 0 4px;">' + applyInlineMarkdown(line) + '</p>'); i++;
+    }
+  }
+  return out.join('');
+}
+
+function applyInlineMarkdown(s) {
+  return s
+    // inline code
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:13px;">$1</code>')
+    // bold **text**
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // italic *text*
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    // italic _text_
+    .replace(/_([^_]+)_/g, '<em>$1</em>');
+}
+
+window.showTab=function(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  const idx={doctors:0,attendance:1,bonuses:2,strikes:3,rules:4,training:5,console:6,admins:7}[name];
+  document.querySelectorAll('.tab')[idx]?.classList.add('active');
+  if (name === 'rules') loadAdminRules();
+  if (name === 'training') loadAdminTraining();
+  if (name === 'bonuses') { populateDoctorSelects(); populateBonusCategories(); setTimeout(renderBonusLayout, 0); }
+  if (name === 'console') startConsole(); else stopConsole();
+};
+window.openModal=id=>document.getElementById('modal-'+id).classList.add('show');
+window.closeModal=id=>document.getElementById('modal-'+id).classList.remove('show');
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show');}));
+window.doLogout=async function(){await writeLog(LOG_ACTIONS.LOGOUT,{});clearSession();window.location.href='login.html';};
+
+// ── Account switch: Admin → Doctor ─────────────────────────────
+// If a doctor account is already linked this session, toggle instantly.
+// Otherwise prompt for the doctor login once.
+window.switchToDoctor=function(){
+  const alt=getSwitchAlt();
+  if(alt && alt.role!=='admin'){ switchAccount(); window.location.href='dashboard.html'; return; }
+  document.getElementById('switchDocUser').value='';
+  document.getElementById('switchDocPass').value='';
+  openModal('switchDoctor');
+};
+
+window.confirmSwitchToDoctor=async function(){
+  const user=document.getElementById('switchDocUser').value.trim();
+  const pass=document.getElementById('switchDocPass').value;
+  const btn=document.getElementById('switchDocBtn');
+  if(!user||!pass){showToast('Enter doctor username and password.','error');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Switching...';
+  try{
+    const res=await loginDoctor(user,pass);
+    if(!res.ok){showToast(res.msg,'error');btn.disabled=false;btn.innerHTML='Switch';return;}
+    const admin=getSession();
+    // Stash the admin session as the alt, make the doctor session active.
+    setSwitchAlt(admin);
+    saveSession({ ...res.session, remember: !!admin?.remember });
+    window.location.href='dashboard.html';
+  }catch(e){showToast('Connection error. Try again.','error');btn.disabled=false;btn.innerHTML='Switch';}
+};
+
+// ── Bot Console (realtime, via Firestore bot_console/live) ──────
+let _consoleUnsub = null;
+let _consoleAutoscroll = true;
+
+const _LEVEL_META = {
+  SUCCESS: { cls:'log-success', icon:'✓' },
+  ERROR:   { cls:'log-error',   icon:'✗' },
+  WARNING: { cls:'log-warning', icon:'⚠' },
+  INFO:    { cls:'log-info',    icon:'ℹ' },
+};
+
+function startConsole(){
+  if (_consoleUnsub) return; // already listening
+  const statusEl = document.getElementById('consoleStatus');
+  statusEl.textContent = 'Connecting…';
+  statusEl.className = 'console-status console-status-off';
+  try {
+    const ref = doc(getDB(), 'bot_console', 'live');
+    _consoleUnsub = onSnapshot(ref, snap => {
+      if (!snap.exists()) {
+        statusEl.textContent = 'No data yet';
+        statusEl.className = 'console-status console-status-off';
+        renderConsole([], null);
+        return;
+      }
+      statusEl.textContent = '● Live';
+      statusEl.className = 'console-status console-status-on';
+      const d = snap.data();
+      renderConsole(d.lines || [], d.updatedAt || null);
+    }, err => {
+      console.error('Console listener error:', err);
+      statusEl.textContent = 'Error';
+      statusEl.className = 'console-status console-status-off';
+    });
+  } catch(e){
+    console.error(e);
+  }
+}
+
+function stopConsole(){
+  if (_consoleUnsub){ _consoleUnsub(); _consoleUnsub = null; }
+}
+
+function renderConsole(lines, updatedAt){
+  const term = document.getElementById('consoleTerminal');
+  if (!lines.length){
+    term.innerHTML = '<div class="console-empty">Waiting for bot output…</div>';
+    document.getElementById('consoleMeta').textContent = '';
+    return;
+  }
+  term.innerHTML = lines.map(l => {
+    const meta = _LEVEL_META[l.l] || { cls:'log-default', icon:'•' };
+    return `<div class="log-line ${meta.cls}">`
+      + `<span class="log-time">${esc(l.t||'')}</span>`
+      + `<span class="log-icon">${meta.icon}</span>`
+      + `<span class="log-msg">${esc(l.m||'')}</span>`
+      + `</div>`;
+  }).join('');
+  if (_consoleAutoscroll) term.scrollTop = term.scrollHeight;
+  document.getElementById('consoleMeta').textContent =
+    updatedAt ? `${lines.length} lines · updated ${fmtConsoleTime(updatedAt)}` : `${lines.length} lines`;
+}
+
+function fmtConsoleTime(iso){
+  try { return new Date(iso).toLocaleTimeString(); } catch { return iso; }
+}
+
+window.toggleConsoleAutoscroll = function(){
+  _consoleAutoscroll = !_consoleAutoscroll;
+  document.getElementById('consoleScrollBtn').textContent = 'Autoscroll: ' + (_consoleAutoscroll ? 'On' : 'Off');
+  if (_consoleAutoscroll){
+    const term = document.getElementById('consoleTerminal');
+    term.scrollTop = term.scrollHeight;
+  }
+};
+
+init().catch(e=>{console.error(e);showToast('Failed to load data.','error');});
+document.getElementById('attHours').addEventListener('input',updateDurationDisplay);
+document.getElementById('attMins').addEventListener('input',updateDurationDisplay);
+toggleHoursField();updateDurationDisplay();
+</script>
+
+<script>
+// ── Bonus Calculator ────────────────────────────────────────────
+let _calcOpen = true;
+
+function toggleCalc() {
+  _calcOpen = !_calcOpen;
+  document.getElementById('calcBody').style.display     = _calcOpen ? '' : 'none';
+  document.getElementById('calcChevron').style.transform = _calcOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
+}
+
+function calcBonus(hoursStr) {
+  const h = hoursStr.match(/(\d+)\s*h(?:ours?)?/i);
+  const m = hoursStr.match(/(\d+)\s*m(?:in(?:utes?)?)?/i);
+  if (!h && !m) return null;
+  const hours   = h ? parseInt(h[1]) : 0;
+  const minutes = m ? parseInt(m[1]) : 0;
+  const totalMins = hours * 60 + minutes;
+  return totalMins / 900;
+}
+
+function formatBonus(val) {
+  if (val === null) return null;
+  const rounded = Math.round(val * 10) / 10;
+  return rounded % 1 === 0 ? `${rounded} Million` : `${rounded} Million`;
+}
+
+function runBonusCalc() {
+  const input = document.getElementById('calcInput').value.trim();
+  if (!input) return;
+
+  const lines = input.split('\n');
+  let totalBonus = 0;
+  const results = [];
+
+  lines.forEach(line => {
+    let trimmed = line.trim();
+    if (!trimmed) return;
+
+    // Strip Format B markdown noise
+    trimmed = trimmed.replace(/^\*\s+/, '').replace(/^-\s+/, '');
+    trimmed = trimmed.replace(/\*\*/g, '');
+    trimmed = trimmed.replace(/\s*\*[^*]+\*\s*$/, '');
+    trimmed = trimmed.replace(/\(([^)]+)\)/, '$1');
+    trimmed = trimmed.replace(/\s+/g, ' ').trim();
+
+    const colonIdx = trimmed.indexOf(':');
+    if (colonIdx === -1) {
+      results.push(`${trimmed} (unable to parse)`);
+      return;
+    }
+
+    const name     = trimmed.slice(0, colonIdx).trim();
+    const hoursStr = trimmed.slice(colonIdx + 1).trim();
+    const bonus    = calcBonus(hoursStr);
+
+    if (bonus === null) {
+      results.push(`${trimmed} (unable to parse)`);
+      return;
+    }
+
+    totalBonus += bonus;
+    results.push(`**${name}:** ${hoursStr} *${formatBonus(bonus)}*`);
+  });
+
+  if (results.length > 0) {
+    results.push('');
+    results.push(`# Total: ${formatBonus(totalBonus)}`);
+  }
+
+  document.getElementById('calcOutput').textContent = results.join('\n');
+  document.getElementById('copyCalcBtn').style.display = '';
+}
+
+function clearCalc() {
+  document.getElementById('calcInput').value = '';
+  document.getElementById('calcOutput').textContent = 'Results will appear here...';
+  document.getElementById('copyCalcBtn').style.display = 'none';
+}
+
+async function copyCalcResult() {
+  const text = document.getElementById('calcOutput').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = document.getElementById('copyCalcBtn');
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  } catch(e) {}
+}
+</script>
+</body>
+</html>

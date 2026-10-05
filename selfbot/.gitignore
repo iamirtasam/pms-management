@@ -1,0 +1,7 @@
+config.json
+serviceaccountkey.json
+serviceAccountKey.json
+__pycache__/
+*.pyc
+.env
+attendance_backup_*.json

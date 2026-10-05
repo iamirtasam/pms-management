@@ -1,7 +1,16 @@
+# Local editor settings
+.claude/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
 config.json
 serviceaccountkey.json
 serviceAccountKey.json
+
+# Generated files
 __pycache__/
 *.pyc
-.env
+*.log
 attendance_backup_*.json

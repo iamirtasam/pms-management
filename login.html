@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMS Portal — Login</title>
+<link rel="stylesheet" href="styles.css">
+<script>(function(){var t=localStorage.getItem('pms-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();</script>
+<style>
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <img class="navbar-logo" src="https://cdn.discordapp.com/attachments/1066446515062702140/1476648699559022914/transparentlogo.png?ex=69b5aa44&is=69b458c4&hm=c30e9123921f3b3609d5998d1feaf8daeafb5488b092ec5877bb35ef064ecf08&" alt="EMS Logo" onerror="this.style.display='none'">
+  <div class="navbar-brand">
+    <div class="navbar-title">EMS Portal</div>
+  </div>
+  <div class="navbar-right">
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="https://cdn.discordapp.com/attachments/1066446515062702140/1476648699559022914/transparentlogo.png?ex=69b5aa44&is=69b458c4&hm=c30e9123921f3b3609d5998d1feaf8daeafb5488b092ec5877bb35ef064ecf08&" alt="EMS" onerror="this.style.display='none'">
+    </div>
+
+    <div class="login-title">Welcome back</div>
+    <div class="login-sub">Sign in to access the EMS Portal</div>
+
+    <div class="role-toggle">
+      <button class="role-btn active" id="roleDoctor" onclick="setRole('doctor')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Doctor
+      </button>
+      <button class="role-btn" id="roleAdmin" onclick="setRole('admin')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Admin
+      </button>
+    </div>
+
+    <div class="login-fields">
+      <div class="form-group">
+        <div class="form-label">Username</div>
+        <div style="position:relative;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--color-graphite);pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <input type="text" class="form-input" id="username" placeholder="Your username" autocomplete="off" style="padding-left:46px;">
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="form-label">Password</div>
+        <div style="position:relative;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--color-graphite);pointer-events:none;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input type="password" class="form-input" id="password" placeholder="Your password" style="padding-left:46px;">
+        </div>
+      </div>
+      <label class="remember-toggle">
+        <input type="checkbox" id="rememberMe">
+        <span class="rt-track">
+          <span class="rt-thumb"></span>
+        </span>
+        <span class="rt-text">Remember me for 10 days</span>
+      </label>
+      <button class="btn btn-primary btn-lg btn-full" id="loginBtn" onclick="doLogin()">Sign In</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { loginDoctor, loginAdmin, saveSession, getSession, showToast, writeLog, LOG_ACTIONS } from './auth.js';
+
+// ── Theme ──────────────────────────────────────────────────
+window.applyTheme = function(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('pms-theme', t);
+  document.querySelectorAll('.icon-sun').forEach(el => el.style.display = t === 'dark' ? 'none' : 'block');
+  document.querySelectorAll('.icon-moon').forEach(el => el.style.display = t === 'dark' ? 'block' : 'none');
+};
+window.toggleTheme = function() {
+  window.applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+};
+(function(){ window.applyTheme(localStorage.getItem('pms-theme') || 'dark'); })();
+
+// Already signed in (current tab OR remembered for 10 days)? Skip the form.
+const s = getSession();
+if (s) window.location.href = s.role === 'admin' ? 'admin.html' : 'dashboard.html';
+
+let currentRole = 'doctor';
+
+window.setRole = function(role) {
+  currentRole = role;
+  document.getElementById('roleDoctor').classList.toggle('active', role === 'doctor');
+  document.getElementById('roleAdmin').classList.toggle('active',  role === 'admin');
+};
+
+const urlRole = new URLSearchParams(window.location.search).get('role');
+if (urlRole === 'admin') setRole('admin');
+
+window.doLogin = async function() {
+  const user = document.getElementById('username').value.trim();
+  const pass = document.getElementById('password').value;
+  const btn  = document.getElementById('loginBtn');
+  if (!user || !pass) { showToast('Enter username and password.', 'error'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Signing in...';
+
+  try {
+    const res = currentRole === 'admin'
+      ? await loginAdmin(user, pass)
+      : await loginDoctor(user, pass);
+
+    if (!res.ok) {
+      showToast(res.msg, 'error');
+      await writeLog(LOG_ACTIONS.LOGIN_FAILED, { role: currentRole, username: user, reason: res.msg });
+    } else {
+      const remember = document.getElementById('rememberMe').checked;
+      saveSession({ ...res.session, remember });
+      await writeLog(LOG_ACTIONS.LOGIN_SUCCESS, { role: currentRole, name: res.session.name || user, username: user, id: res.session.id || 'admin' });
+      window.location.href = currentRole === 'admin' ? 'admin.html' : 'dashboard.html';
+    }
+  } catch(e) {
+    showToast('Connection error. Try again.', 'error');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Sign In';
+};
+
+document.getElementById('password').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+</script>
+</body>
+</html>
